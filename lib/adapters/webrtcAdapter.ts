@@ -28,8 +28,21 @@ const KEEPALIVE_MS = 4000; // < 5000, per docs
 
 // A WebRTC peer can dip into "disconnected" on a transient packet-loss blip
 // and recover on its own. Don't treat it as fatal until it's been down this
-// long (or transitions to "failed", which is genuinely terminal).
-const DISCONNECT_GRACE_MS = 8000;
+// long (or transitions to "failed", which is genuinely terminal). Tuned down
+// from 8s: on the glasses' AP the disconnects we see have never recovered,
+// they're deterministic ~25s media-path deaths, so faster fail = faster
+// auto-reconnect.
+const DISCONNECT_GRACE_MS = 3000;
+
+// Stats sampling cadence. Lower → faster flatline detection, but more
+// pc.getStats() churn (cheap on this scale).
+const STATS_INTERVAL_MS = 1500;
+
+// Force-fail after this many consecutive samples reporting either zero
+// inbound video bytes OR no selected candidate pair, while ICE still thinks
+// it's connected. Catches the "media path died, but ICE hasn't noticed yet"
+// window — saves ~5s vs waiting for ICE itself to give up.
+const FLATLINE_SAMPLES = 2;
 
 // One missed keep-alive is harmless — the device only reaps the session after
 // 20s of silence (docs §4.2.1). Tolerate a few consecutive misses (≈ this×4s)
@@ -81,8 +94,21 @@ export class WebRtcTobiiAdapter implements TobiiAdapter {
   private disconnectGraceTimer: ReturnType<typeof setTimeout> | null = null;
   private cleaningUp = false;
 
+  // --- Media-path diagnostics ---------------------------------------------
+  private statsTimer: ReturnType<typeof setInterval> | null = null;
+  private statsPrevBytes = 0;
+  private statsPrevTs = 0;
+  private statsFlatlineCount = 0;
+  private statsHadSelectedPair = false;
+
   // --- Signal IDs we've subscribed to over the WS for gaze data -----------
   private gazeSignalIds = new Set<number>();
+  // Diagnostics: log the first few raw gaze-signal payloads + any unexpected
+  // signal so we can confirm the wire shape from a single dump. Reset per
+  // session in cleanup().
+  private gazeRawLogCount = 0;
+  private gazeEmitCount = 0;
+  private unknownSignalLogCount = 0;
 
   // --- WS request bookkeeping ---------------------------------------------
   private wsReqId = 0;
@@ -276,6 +302,10 @@ export class WebRtcTobiiAdapter implements TobiiAdapter {
       logger.info("adapter", `step 6/6: start keep-alive worker (${KEEPALIVE_MS}ms)`);
       this.startKeepAliveWorker(this.sessionId);
 
+      // Watch the actual media transport so we can see exactly when/why it
+      // drops (the ~25s ICE failure is independent of the healthy signaling).
+      this.startStatsMonitor();
+
       this.emitStatus({ state: "connected", message: "WebRTC live" });
       logger.info("adapter", "connect() complete — WebRTC live");
     } catch (err) {
@@ -298,8 +328,12 @@ export class WebRtcTobiiAdapter implements TobiiAdapter {
     if (this.cleaningUp) return;
     this.cleaningUp = true;
     this.clearDisconnectGrace();
+    this.stopStatsMonitor();
     this.keepAliveFailures = 0;
     this.remoteHostIp = null;
+    this.gazeRawLogCount = 0;
+    this.gazeEmitCount = 0;
+    this.unknownSignalLogCount = 0;
     if (this.keepAliveWorker) {
       try {
         this.keepAliveWorker.postMessage({ type: "stop" });
@@ -311,11 +345,10 @@ export class WebRtcTobiiAdapter implements TobiiAdapter {
     }
     const uuid = this.sessionId;
     this.sessionId = null;
-    try {
-      if (uuid) await this.deleteSession(uuid);
-    } catch {
-      /* best effort */
-    }
+    // Fire-and-forget: the teardown action can hang for 5s and 500 on this
+    // firmware (and the session is reaped server-side after 20s regardless),
+    // so don't let it block teardown/reconnect.
+    if (uuid) void this.deleteSession(uuid);
     if (this.ws) {
       try {
         this.ws.close();
@@ -426,43 +459,61 @@ export class WebRtcTobiiAdapter implements TobiiAdapter {
     } catch {
       return;
     }
-    // The api data channel may wrap pushed signals like the WebSocket does:
-    //   { signal: <id>, body: [ <gazeSample>, <timestamp> ] }
-    // Unwrap both shapes — the body's first element is the sample object.
-    let candidate: any = obj;
-    if (Array.isArray(obj?.body) && obj.body.length > 0) {
-      candidate = obj.body[0];
+
+    // A pushed signal wraps its payload in a `body` array, and per the G3
+    // signal convention (docs §3.6, cf. the event-signal example
+    // `{signal, body:[<timestamp>, <payload>]}`) the TIMESTAMP comes first and
+    // the payload object second — the opposite of what we assumed before.
+    // Over the data channel the device may also push a bare sample object.
+    // Rather than hard-code a position, scan every plausible container for a
+    // gaze-shaped object so we're robust to either ordering/nesting.
+    const search: any[] = [obj];
+    if (obj && typeof obj === "object") {
+      if (obj.data) search.push(obj.data);
+      if (Array.isArray(obj.body)) {
+        for (const el of obj.body) {
+          search.push(el);
+          if (el && typeof el === "object" && el.data) search.push(el.data);
+        }
+      }
     }
-    const d = candidate?.data ?? candidate;
-    // Only treat as a gaze frame if it has gaze-shaped fields. Other channels
-    // (events, IMU, syncport) share the data-channel mechanism but have
-    // different payloads — silently drop those.
-    if (
-      !d ||
-      (d.gaze2d == null &&
-        d.gaze3d == null &&
-        d.eyeleft == null &&
-        d.eyeright == null)
-    ) {
-      return;
-    }
+
+    const looksLikeGaze = (x: any): boolean =>
+      !!x &&
+      typeof x === "object" &&
+      (x.gaze2d != null ||
+        x.gaze3d != null ||
+        x.eyeleft != null ||
+        x.eyeright != null);
+
+    const d = search.find(looksLikeGaze);
+    // Not a gaze frame (events / IMU / syncport share the channel) — drop.
+    if (!d) return;
+
+    // Timestamp: explicit field on the wrapper or sample, else the first
+    // numeric in the signal body (the convention slot), else local clock.
+    const numericInBody = Array.isArray(obj?.body)
+      ? obj.body.find((x: unknown) => typeof x === "number")
+      : undefined;
+    const tsHolder = search.find(
+      (x) => x && typeof x === "object" && typeof x.timestamp === "number"
+    );
+    const t =
+      typeof obj?.timestamp === "number"
+        ? obj.timestamp
+        : typeof tsHolder?.timestamp === "number"
+        ? tsHolder.timestamp
+        : typeof numericInBody === "number"
+        ? numericInBody
+        : performance.now() / 1000;
+
     const g2d = d.gaze2d;
     const left = d.eyeleft;
     const right = d.eyeright;
-
-    const tsFromBody =
-      Array.isArray(obj?.body) && typeof obj.body[1] === "number"
-        ? obj.body[1]
-        : null;
     const sample: GazeSample = {
-      t:
-        typeof obj?.timestamp === "number"
-          ? obj.timestamp
-          : typeof candidate?.timestamp === "number"
-          ? candidate.timestamp
-          : tsFromBody ?? performance.now() / 1000,
+      t,
       gaze2d: Array.isArray(g2d) && g2d.length === 2 ? [g2d[0], g2d[1]] : null,
-      gaze3d: Array.isArray(d?.gaze3d)
+      gaze3d: Array.isArray(d.gaze3d)
         ? (d.gaze3d as [number, number, number])
         : null,
       pupilLeft:
@@ -474,6 +525,15 @@ export class WebRtcTobiiAdapter implements TobiiAdapter {
       eyeRightValid:
         right?.pupildiameter != null || Array.isArray(right?.gazedirection),
     };
+    if (this.gazeEmitCount < 3) {
+      this.gazeEmitCount += 1;
+      logger.info("gaze", `emitted sample #${this.gazeEmitCount}`, {
+        t: sample.t,
+        gaze2d: sample.gaze2d,
+        pupilLeft: sample.pupilLeft,
+        pupilRight: sample.pupilRight,
+      });
+    }
     this.gazeSubs.forEach((cb) => cb(sample));
   }
 
@@ -495,7 +555,15 @@ export class WebRtcTobiiAdapter implements TobiiAdapter {
   // X-g3-action-error header.
   // -------------------------------------------------------------------------
 
-  private async restAction<T>(path: string, body: unknown[]): Promise<T> {
+  private async restAction<T>(
+    path: string,
+    body: unknown[],
+    opts?: { quiet?: boolean }
+  ): Promise<T> {
+    // `quiet` downgrades failure logs to WARN — used for actions we expect
+    // may be unsupported on this firmware (!remote-host, teardown) and handle
+    // gracefully, so they don't masquerade as hard errors in the dump.
+    const failLog = opts?.quiet ? logger.warn : logger.error;
     const url = `${this.httpBase}/rest/${path}`;
     const t0 = performance.now();
     let r: Response;
@@ -507,7 +575,7 @@ export class WebRtcTobiiAdapter implements TobiiAdapter {
       });
     } catch (e) {
       const ms = Math.round(performance.now() - t0);
-      logger.error("http", `POST ${path} fetch threw after ${ms}ms`, {
+      failLog.call(logger, "http", `POST ${path} fetch threw after ${ms}ms`, {
         url,
         error: e instanceof Error ? e.message : String(e),
       });
@@ -517,7 +585,7 @@ export class WebRtcTobiiAdapter implements TobiiAdapter {
     const ms = Math.round(performance.now() - t0);
     const errInfo = r.headers.get("X-g3-action-error");
     if (!r.ok) {
-      logger.error("http", `POST ${path} → HTTP ${r.status} in ${ms}ms`, {
+      failLog.call(logger, "http", `POST ${path} → HTTP ${r.status} in ${ms}ms`, {
         url,
         body: text.slice(0, 300),
         errInfo,
@@ -557,33 +625,46 @@ export class WebRtcTobiiAdapter implements TobiiAdapter {
   }
 
   /**
-   * Query the glasses for the IP it sees this client at (!remote-host) so we
-   * can rewrite anonymized mDNS host candidates. Best-effort: any failure
-   * leaves remoteHostIp null and we send candidates unmodified.
+   * Query the glasses for the IP it sees this client at so we can rewrite
+   * anonymized mDNS host candidates (docs lines 638-642). The docs name the
+   * action `!remote-host` but don't pin down its parent object, and the
+   * per-session path 400s on this firmware. Probe a handful of plausible
+   * paths and use the first that returns an IPv4-shaped string.
+   *
+   * Best-effort: any failure leaves remoteHostIp null and we send candidates
+   * verbatim (which is what causes the ~25s mDNS-stale disconnects).
    */
   private async fetchRemoteHost(uuid: string): Promise<void> {
-    try {
-      const res = await this.restAction<unknown>(
-        `webrtc/${uuid}!remote-host`,
-        []
-      );
-      const ip =
-        typeof res === "string"
-          ? res
-          : res && typeof res === "object" && "ip" in res
-          ? String((res as { ip: unknown }).ip)
-          : null;
-      if (ip && /\d+\.\d+\.\d+\.\d+/.test(ip)) {
-        this.remoteHostIp = ip;
-        logger.info("ice", `remote-host resolved client IP=${ip}`);
-      } else {
-        logger.warn("ice", "remote-host returned no usable IP", { res });
+    const candidates = [
+      `webrtc!remote-host`,           // parent object (no session id)
+      `webrtc/${uuid}!remote-host`,   // session-scoped (original guess)
+      `system!remote-host`,           // common Tobii namespacing
+      `network!remote-host`,          // alternative parent
+      `rudimentary!remote-host`,      // dev/test surface
+    ];
+    for (const path of candidates) {
+      try {
+        const res = await this.restAction<unknown>(path, [], { quiet: true });
+        const ip =
+          typeof res === "string"
+            ? res
+            : res && typeof res === "object" && "ip" in res
+            ? String((res as { ip: unknown }).ip)
+            : null;
+        if (ip && /^\d+\.\d+\.\d+\.\d+$/.test(ip)) {
+          this.remoteHostIp = ip;
+          logger.info("ice", `remote-host: ${path} → ${ip}`);
+          return;
+        }
+        logger.warn("ice", `${path} returned no usable IP`, { res });
+      } catch (e) {
+        // Quiet — most of these will 400. Only surface the last failure.
       }
-    } catch (e) {
-      logger.warn("ice", "remote-host query failed — sending candidates verbatim", {
-        error: e instanceof Error ? e.message : String(e),
-      });
     }
+    logger.warn(
+      "ice",
+      "no !remote-host action found on any path — falling back to mDNS candidates (expect ~25s mDNS-stale disconnect)"
+    );
   }
 
   /**
@@ -613,6 +694,134 @@ export class WebRtcTobiiAdapter implements TobiiAdapter {
     if (this.disconnectGraceTimer) {
       clearTimeout(this.disconnectGraceTimer);
       this.disconnectGraceTimer = null;
+    }
+  }
+
+  // Poll getStats() to expose the media transport health: inbound video
+  // throughput and the selected ICE pair's consent counters. When the ~25s
+  // drop hits, kbps falls to 0 and requestsSent keeps climbing while
+  // responsesReceived stalls — the signature of the peer no longer answering
+  // STUN (i.e. the glasses lost the route back to our mDNS candidate).
+  private startStatsMonitor(): void {
+    this.stopStatsMonitor();
+    this.statsPrevBytes = 0;
+    this.statsPrevTs = 0;
+    this.statsFlatlineCount = 0;
+    this.statsHadSelectedPair = false;
+    this.statsTimer = setInterval(
+      () => void this.sampleStats(),
+      STATS_INTERVAL_MS
+    );
+  }
+
+  private stopStatsMonitor(): void {
+    if (this.statsTimer) {
+      clearInterval(this.statsTimer);
+      this.statsTimer = null;
+    }
+  }
+
+  private async sampleStats(): Promise<void> {
+    const pc = this.pc;
+    if (!pc) return;
+    let stats: RTCStatsReport;
+    try {
+      stats = await pc.getStats();
+    } catch {
+      return;
+    }
+    let videoBytes = 0;
+    let videoPackets = 0;
+    let framesDecoded = 0;
+    let selected: any = null;
+    const locals = new Map<string, any>();
+    const remotes = new Map<string, any>();
+    const pairs: any[] = [];
+    stats.forEach((r: any) => {
+      if (r.type === "inbound-rtp" && r.kind === "video") {
+        videoBytes += r.bytesReceived ?? 0;
+        videoPackets += r.packetsReceived ?? 0;
+        framesDecoded += r.framesDecoded ?? 0;
+      } else if (r.type === "candidate-pair") {
+        pairs.push(r);
+        if (r.nominated && r.state === "succeeded") selected = r;
+      } else if (r.type === "local-candidate") {
+        locals.set(r.id, r);
+      } else if (r.type === "remote-candidate") {
+        remotes.set(r.id, r);
+      }
+    });
+    if (!selected) selected = pairs.find((p) => p.state === "succeeded") ?? null;
+
+    const now = performance.now();
+    const dt = this.statsPrevTs ? (now - this.statsPrevTs) / 1000 : 0;
+    const kbps =
+      dt > 0
+        ? Math.round(((videoBytes - this.statsPrevBytes) * 8) / dt / 1000)
+        : 0;
+    this.statsPrevBytes = videoBytes;
+    this.statsPrevTs = now;
+
+    const fmt = (c: any) =>
+      c
+        ? `${c.candidateType} ${c.protocol} ${c.address ?? c.ip ?? "?"}:${c.port ?? "?"}`
+        : "?";
+
+    logger.info("stats", `media inbound ${kbps} kbps`, {
+      conn: pc.connectionState,
+      ice: pc.iceConnectionState,
+      videoBytes,
+      videoPackets,
+      framesDecoded,
+      pair: selected
+        ? {
+            local: fmt(locals.get(selected.localCandidateId)),
+            remote: fmt(remotes.get(selected.remoteCandidateId)),
+            rttMs:
+              typeof selected.currentRoundTripTime === "number"
+                ? Math.round(selected.currentRoundTripTime * 1000)
+                : null,
+            requestsSent: selected.requestsSent,
+            responsesReceived: selected.responsesReceived,
+            consentRequestsSent: selected.consentRequestsSent,
+          }
+        : "none",
+    });
+
+    // Flatline detector. Fires faster than ICE's own ~25s consent-freshness
+    // timeout — when we see the canonical death pattern (was healthy, now
+    // either no media flowing OR no selected pair) for N consecutive samples,
+    // force-fail so the page's auto-reconnect kicks in immediately.
+    const iceConnected =
+      pc.iceConnectionState === "connected" ||
+      pc.iceConnectionState === "completed";
+    if (selected) this.statsHadSelectedPair = true;
+
+    const looksDead = iceConnected && this.statsHadSelectedPair && (
+      kbps === 0 ||
+      !selected
+    );
+    // Skip the very first sample after connect — `dt` is small and `kbps`
+    // can read 0 just because the prev-bytes baseline hasn't filled yet.
+    const isFirstSample = dt === 0;
+
+    if (looksDead && !isFirstSample) {
+      this.statsFlatlineCount += 1;
+      if (this.statsFlatlineCount >= FLATLINE_SAMPLES) {
+        logger.error(
+          "stats",
+          `media flatlined for ${this.statsFlatlineCount} samples — forcing fail`,
+          { kbps, hadPair: !!selected }
+        );
+        this.clearDisconnectGrace();
+        this.statsFlatlineCount = 0; // arm for any future session
+        this.emitStatus({
+          state: "error",
+          message: "media flatlined (kbps=0, pair lost)",
+        });
+      }
+    } else if (kbps > 0 && selected) {
+      this.statsFlatlineCount = 0;
     }
   }
 
@@ -746,7 +955,7 @@ export class WebRtcTobiiAdapter implements TobiiAdapter {
     // so we don't mask the real disconnect reason. The 20s server-side
     // timeout reaps abandoned sessions anyway.
     try {
-      await this.restAction<boolean>("webrtc!delete", [uuid]);
+      await this.restAction<boolean>("webrtc!delete", [uuid], { quiet: true });
     } catch {
       /* swallow — session will time out server-side */
     }
@@ -870,10 +1079,29 @@ export class WebRtcTobiiAdapter implements TobiiAdapter {
     }
 
     if (this.gazeSignalIds.has(msg.signal)) {
-      // Pushed gaze sample: { signal, body: [<sampleObj>, <timestamp>] }.
-      // handleGazeMessage already unwraps the body[0] / body[1] shape.
+      // Log the first few raw payloads so the actual wire shape is provable
+      // from a single dump (then handleGazeMessage scans for the gaze object).
+      if (this.gazeRawLogCount < 5) {
+        this.gazeRawLogCount += 1;
+        logger.info(
+          "gaze",
+          `raw signal #${this.gazeRawLogCount} (signal=${msg.signal})`,
+          { raw: JSON.stringify(msg).slice(0, 600) }
+        );
+      }
       this.handleGazeMessage(msg);
       return;
+    }
+
+    // An unexpected signal id — maybe gaze arrives on a different id than the
+    // subscription returned. Surface the first few so we can correlate.
+    if (this.unknownSignalLogCount < 5) {
+      this.unknownSignalLogCount += 1;
+      logger.warn(
+        "ws",
+        `unhandled signal=${msg.signal} (#${this.unknownSignalLogCount})`,
+        { raw: JSON.stringify(msg).slice(0, 300) }
+      );
     }
   }
 

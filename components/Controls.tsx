@@ -6,6 +6,7 @@ import type { AdapterKind } from "@/lib/adapters/types";
 import { G3_BASE, G3_DIRECT } from "@/lib/config";
 import { probeGlasses, type ProbeResult } from "@/lib/glassesProbe";
 import { formatForCopy, logger, type LogEntry } from "@/lib/logger";
+import type { LocalIpExposureStatus } from "@/lib/exposeLocalIp";
 
 function Btn({
   children,
@@ -122,6 +123,48 @@ function LogPanel() {
   );
 }
 
+function IpExposureBlock({
+  status,
+  onRequest,
+}: {
+  status: LocalIpExposureStatus;
+  onRequest: () => void;
+}) {
+  const tone =
+    status === "granted"
+      ? "text-signal"
+      : status === "denied" || status === "unavailable"
+      ? "text-alert"
+      : "text-muted";
+  const label =
+    status === "granted"
+      ? "real LAN IP exposed (mic granted)"
+      : status === "denied"
+      ? "mic denied — staying on mDNS"
+      : status === "unavailable"
+      ? "getUserMedia unavailable"
+      : "mDNS anonymized (default)";
+  const hint =
+    status === "granted"
+      ? "Future connections expose your real IP — the ~25s mDNS-stale drop should be gone."
+      : status === "denied"
+      ? "Reconnect needed if you change your mind."
+      : "Chrome anonymizes your LAN IP in WebRTC. Granting mic permission (we don't use audio) unlocks real IPs.";
+  return (
+    <div className="space-y-1 rounded border border-line/60 bg-bg/40 p-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className={`font-mono text-[10px] uppercase tracking-widest ${tone}`}>
+          {label}
+        </span>
+        {status !== "granted" && status !== "unavailable" && (
+          <Btn onClick={onRequest}>grant mic</Btn>
+        )}
+      </div>
+      <div className="font-mono text-[10px] text-muted">{hint}</div>
+    </div>
+  );
+}
+
 function ProbeReadout({ r }: { r: ProbeResult }) {
   const leg = (label: string, l: ProbeResult["proxy"]) => {
     if (!l) return null;
@@ -207,6 +250,10 @@ export default function Controls({
   onCalibrate,
   onToggleRecord,
   onPickAdapter,
+  autoReconnect,
+  onToggleAutoReconnect,
+  ipExposureStatus,
+  onRequestIpExposure,
 }: {
   connected: boolean;
   recording: boolean;
@@ -216,6 +263,10 @@ export default function Controls({
   onCalibrate: () => void;
   onToggleRecord: () => void;
   onPickAdapter: (k: AdapterKind) => void;
+  autoReconnect: boolean;
+  onToggleAutoReconnect: (v: boolean) => void;
+  ipExposureStatus: LocalIpExposureStatus;
+  onRequestIpExposure: () => void;
 }) {
   const cfg = useStore((s) => s.settings);
   const setSetting = useStore((s) => s.setSetting);
@@ -290,6 +341,28 @@ export default function Controls({
             </Btn>
           </div>
           {probe && <ProbeReadout r={probe} />}
+        </div>
+      )}
+
+      {/* Stability — workarounds for the ~25s mDNS-stale disconnect */}
+      {adapterKind === "webrtc" && (
+        <div className="space-y-2 border-t border-line/40 pt-3">
+          <div className="font-mono text-[10px] uppercase tracking-widest text-muted">
+            stability
+          </div>
+          <label className="flex items-center justify-between gap-2 font-mono text-[10px] uppercase tracking-widest text-muted">
+            <span>auto-reconnect on failure</span>
+            <input
+              type="checkbox"
+              checked={autoReconnect}
+              onChange={(e) => onToggleAutoReconnect(e.target.checked)}
+              className="accent-signal"
+            />
+          </label>
+          <IpExposureBlock
+            status={ipExposureStatus}
+            onRequest={onRequestIpExposure}
+          />
         </div>
       )}
 
