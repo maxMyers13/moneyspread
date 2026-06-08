@@ -1,6 +1,6 @@
 # moneyspread — eye-tracking viewer for Tobii Pro Glasses 3
 
-[![status: research tool](https://img.shields.io/badge/status-research--tool-blue)]() [![platform: macOS](https://img.shields.io/badge/platform-macOS-lightgrey)]()
+[![status: research tool](https://img.shields.io/badge/status-research--tool-blue)]() [![platform: macOS · Windows](https://img.shields.io/badge/platform-macOS%20·%20Windows-lightgrey)]()
 
 A desktop app that talks to **Tobii Pro Glasses 3** eye-tracking hardware and shows you, in real time:
 
@@ -19,7 +19,7 @@ You can **record** a session straight to the glasses' SD card, **replay** it lat
 ## Table of contents
 
 - [Before you start](#before-you-start)
-- [Part 1 — One-time setup (do this once on your Mac)](#part-1--one-time-setup-do-this-once-on-your-mac)
+- **Part 1 — One-time setup** — [macOS](#part-1macos--one-time-setup) · [Windows](#part-1windows--one-time-setup)
 - [Part 2 — Configure the project](#part-2--configure-the-project)
 - [Part 3 — Daily use](#part-3--daily-use)
 - [Part 4 — Using the viewer](#part-4--using-the-viewer)
@@ -32,7 +32,7 @@ You can **record** a session straight to the glasses' SD card, **replay** it lat
 
 You will need:
 
-1. **A Mac** (Apple Silicon or Intel, macOS 13+).
+1. **A laptop**: either a Mac (Apple Silicon or Intel, macOS 13+) **or** a Windows PC (Windows 10 build 17763+ / Windows 11). Both work.
 2. **Tobii Pro Glasses 3** with the recording unit and a charged battery.
 3. **The serial number** printed on the back of the recording unit. It looks like `TG03B-080200012671`.
 4. **About 30 minutes** for first-time setup. After that, opening the app each day takes ~1 minute.
@@ -49,7 +49,9 @@ The glasses broadcast their own Wi-Fi network. To use the live view, your Mac ha
 
 ---
 
-## Part 1 — One-time setup (do this once on your Mac)
+## Part 1 (macOS) — One-time setup
+
+> On Windows? Skip ahead to **[Part 1 (Windows) — One-time setup](#part-1windows--one-time-setup)**.
 
 ### Step 1.1 — Open the Terminal
 
@@ -121,6 +123,101 @@ cd ..
 
 `uv sync` sets up Python and downloads the helper's libraries. The `cd ..` at the end takes you back out of the `sidecar` folder.
 
+You're done installing things. ✅ Skip ahead to **[Part 2 — Configure the project](#part-2--configure-the-project)**.
+
+---
+
+## Part 1 (Windows) — One-time setup
+
+> On macOS? Use **[Part 1 (macOS)](#part-1macos--one-time-setup)** instead.
+
+### Step 1.1 — Open PowerShell
+
+Press `Win` and type `powershell`. In the search results, click **Windows PowerShell**. A blue (or black) window opens with a `PS C:\Users\You>` prompt. This is where you'll paste the commands below. **Every command in a grey box should be copy-pasted and run with Enter.**
+
+> A faster, nicer alternative is [Windows Terminal](https://aka.ms/terminal) from the Microsoft Store — same idea, prettier and easier to read. Either works for everything below.
+
+### Step 1.2 — Make sure winget is available
+
+`winget` is Windows' built-in app installer (think of it as a free app store for command-line tools). It ships with Windows 10 (Aug 2021 update or later) and Windows 11. Check it's there:
+
+```powershell
+winget --version
+```
+
+If you see a version number (e.g. `v1.7.x`), you're good. If you see "command not found" or "not recognized", install **App Installer** from the Microsoft Store and try again.
+
+### Step 1.3 — Install everything we need
+
+We need five things: **Git** (downloads the project), **Node.js** (runs the browser app), **Python 3.12** + **uv** (runs the recording helper), and **ffmpeg** (turns recordings into video files). One command does it all:
+
+```powershell
+winget install --id Git.Git -e ; winget install --id OpenJS.NodeJS.LTS -e ; winget install --id Python.Python.3.12 -e ; winget install --id astral-sh.uv -e ; winget install --id Gyan.FFmpeg -e
+```
+
+Windows will prompt with a UAC dialog ("Do you want to allow this app to make changes?") for some installs. Click **Yes** each time. The whole thing takes 5–10 minutes.
+
+> If `winget` complains about source agreements the first time, type `Y` and Enter to accept, then re-run the line above.
+
+**Important: close PowerShell and open a new window** after the install finishes. The new tools won't be visible to your current PowerShell session — Windows only picks them up in newly-launched terminals.
+
+In the new PowerShell window, verify with:
+
+```powershell
+git --version ; node --version ; python --version ; uv --version ; ffmpeg -version | Select-Object -First 1
+```
+
+You should see five lines, each with a version number. If any are missing, re-run the corresponding `winget install` line.
+
+### Step 1.4 — Install pnpm
+
+`pnpm` is the helper that downloads the browser app's parts. It rides on top of Node, which you just installed:
+
+```powershell
+npm install -g pnpm
+```
+
+Verify:
+
+```powershell
+pnpm --version
+```
+
+### Step 1.5 — Install Bonjour (lets your PC find the glasses)
+
+Windows doesn't natively resolve `.local` hostnames the way Macs do. The glasses identify themselves with a `.local` name (e.g. `tg03b-080200099999.local`), so without this you can't reach them by name. The fix is Apple's free **Bonjour Print Services**:
+
+1. Download Bonjour Print Services from <https://support.apple.com/kb/DL999>
+2. Run the installer. Click through the defaults; reboot if it asks.
+
+Bonjour is harmless: it's a tiny background service that resolves `.local` names on your local network. Many PCs already have it (any iTunes install brings it).
+
+### Step 1.6 — Download the project
+
+```powershell
+cd $HOME\Documents
+git clone https://github.com/maxMyers13/moneyspread.git
+cd moneyspread
+```
+
+`git clone` downloads a copy of the project. `cd moneyspread` moves you inside that folder. **From now on, all the commands assume you're in this folder.** If you close PowerShell and re-open it, run `cd $HOME\Documents\moneyspread` to get back.
+
+### Step 1.7 — Install the browser app's dependencies
+
+```powershell
+pnpm install
+```
+
+1–3 minutes. If you see a warning about "scripts" needing approval, type `a` (approve all) and Enter.
+
+### Step 1.8 — Install the recording helper's dependencies
+
+```powershell
+cd sidecar
+uv sync
+cd ..
+```
+
 You're done installing things. ✅
 
 ---
@@ -129,14 +226,21 @@ You're done installing things. ✅
 
 We need to tell the app which Tobii unit to talk to. **Find your glasses' serial number** (the `TG03B-080200012671`-style sticker on the recording unit).
 
-In Terminal, still inside the `moneyspread` folder:
+In your terminal, still inside the `moneyspread` folder:
 
+**macOS:**
 ```bash
 cp .env.local.example .env.local
 open -e .env.local
 ```
 
-`open -e` opens the file in TextEdit. Find the two lines that reference `tg03b-080200012671.local`. **Replace them with your unit's serial, in lowercase, followed by `.local`**.
+**Windows:**
+```powershell
+Copy-Item .env.local.example .env.local
+notepad .env.local
+```
+
+The file opens in TextEdit (macOS) or Notepad (Windows). Find the two lines that reference `tg03b-080200012671.local`. **Replace them with your unit's serial, in lowercase, followed by `.local`**.
 
 For example, if the sticker says `TG03B-080200099999`, your two lines become:
 
@@ -145,7 +249,7 @@ G3_HOST_INTERNAL=http://tg03b-080200099999.local
 NEXT_PUBLIC_G3_DIRECT=http://tg03b-080200099999.local
 ```
 
-Save (`⌘ + S`) and close TextEdit.
+Save (`⌘ + S` on Mac, `Ctrl + S` on Windows) and close the editor.
 
 That's all the configuration. The recording helper picks up the same hostname from the same file.
 
@@ -159,18 +263,28 @@ Each time you want to use the glasses, do this:
 
 Hold the recording unit's power button until the LED comes on. Wait ~30 seconds for it to fully boot.
 
-### Step 3.2 — Connect your Mac to the glasses' Wi-Fi
+### Step 3.2 — Connect your computer to the glasses' Wi-Fi
 
-Click the Wi-Fi icon in your Mac's menu bar. Look for a network named after the serial (e.g., `TG03B-080200099999`). Connect to it. **The password is `TobiiGlasses`** (with a capital T and G).
+- **macOS**: click the Wi-Fi icon in the menu bar.
+- **Windows**: click the network icon in the system tray (bottom-right).
+
+Look for a network named after the serial (e.g., `TG03B-080200099999`). Connect to it. **The password is `TobiiGlasses`** (capital T and G).
 
 > You'll lose internet for the duration. That's expected.
 
 ### Step 3.3 — Start the app
 
-Open Terminal and run:
+Open your terminal (Terminal on Mac, PowerShell on Windows):
 
+**macOS:**
 ```bash
 cd ~/Documents/moneyspread
+pnpm dev
+```
+
+**Windows:**
+```powershell
+cd $HOME\Documents\moneyspread
 pnpm dev
 ```
 
@@ -181,14 +295,21 @@ You'll see a few lines, ending with:
 ✓ Ready in 1.2s
 ```
 
-Leave that Terminal window open.
+Leave that terminal window open.
 
 ### Step 3.4 — (Optional) Start the recording helper
 
-If you want to record sessions, replay them, or export annotated videos, **open a second Terminal window** (`⌘ + N` in Terminal) and run:
+If you want to record sessions, replay them, or export annotated videos, **open a second terminal window** (`⌘ + N` in Terminal on Mac; right-click the PowerShell icon in your taskbar → "Windows PowerShell" on Windows) and run:
 
+**macOS:**
 ```bash
 cd ~/Documents/moneyspread/sidecar
+uv run sidecar
+```
+
+**Windows:**
+```powershell
+cd $HOME\Documents\moneyspread\sidecar
 uv run sidecar
 ```
 
@@ -199,7 +320,7 @@ sidecar starting: device=tg03b-...local  recordings_dir=...
 INFO:     Uvicorn running on http://127.0.0.1:8765
 ```
 
-Leave this Terminal open too.
+Leave this terminal open too.
 
 If you only want to watch live (no recording/replay/export), you can skip this step. The app degrades gracefully — the "RECORDINGS" panel will say "sidecar offline" but everything else works.
 
@@ -221,13 +342,13 @@ In the right-hand panel, under **CONTROLS**, the `WEBRTC` source should already 
 - the eye camera (small, black-and-white — that's normal, it's an infrared sensor) bottom-left
 - a small dot moving over the scene video, tracking the wearer's gaze
 
-If something goes wrong, click **PROBE GLASSES** first — it'll tell you whether your Mac can reach the glasses at all and explain why if not.
+If something goes wrong, click **PROBE GLASSES** first — it'll tell you whether your computer can reach the glasses at all and explain why if not.
 
 ### Step 3.7 — When you're done
 
 - Click **DISCONNECT** in the viewer.
-- Close Terminal windows (`⌘ + Q` in Terminal).
-- Reconnect your Mac to your regular Wi-Fi.
+- Close terminal windows (`⌘ + Q` on Mac, click the X on Windows).
+- Reconnect your computer to your regular Wi-Fi.
 - Turn off the glasses (hold the power button for 4 seconds, release on first LED blink).
 
 ---
@@ -270,14 +391,27 @@ After you record a session, it appears here.
 - Are the glasses powered on with a charged battery?
 - Did you put your exact serial in `.env.local` (lowercase, with `.local` at the end)?
 - Restart `pnpm dev` after changing `.env.local`.
+- **Windows only**: did you install Bonjour Print Services (Step 1.5)? Without it, Windows can't resolve `.local` hostnames. Reboot after installing if you forgot.
 
 ### Connection works but drops every ~25 seconds
 
 This is a known limitation of the glasses' built-in Wi-Fi access point — it's not strong enough to sustain WebRTC for very long. The app handles it automatically: you'll see a brief flicker, then it reconnects. You can ignore it for short recordings; for longer sessions, recordings go to the SD card and aren't affected.
 
-### `pnpm: command not found` or `uv: command not found`
+### `pnpm: command not found` / `uv: command not found` / `'winget' is not recognized`
 
-Open a new Terminal window. The tools were installed but the existing window doesn't know about them yet.
+Close the terminal window and open a brand-new one. The tools were installed but the existing window doesn't know about them yet — Windows and macOS both only show newly-installed tools in newly-launched terminals.
+
+If `winget` itself is missing even in a fresh window, you're on a Windows version older than the 2021 update. Install **App Installer** from the Microsoft Store and try again.
+
+### Windows says PowerShell scripts are disabled
+
+If you see "running scripts is disabled on this system" when running `pnpm` or `uv`, paste this once into PowerShell and answer `Y`:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+```
+
+This is a one-time per-user setting that lets locally-installed tools run.
 
 ### Eye cam looks weird / black and white
 
