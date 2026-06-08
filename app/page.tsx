@@ -81,6 +81,11 @@ export default function Page() {
   const reconnectAttemptsRef = useRef<number[]>([]); // timestamps of recent attempts
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [autoReconnect, setAutoReconnect] = useState(true);
+  // Set when the adapter reports the deterministic ~25s mDNS-stale media
+  // death. Reconnecting just loops back into the same doomed path, so instead
+  // of auto-retrying we surface a banner prompting the user to enable real-IP
+  // mode (grant mic) or disable Chrome's mDNS anonymization, then reconnect.
+  const [mdnsStalled, setMdnsStalled] = useState(false);
   const [ipExposure, setIpExposure] = useState<LocalIpExposureStatus>("unknown");
   useEffect(() => {
     setIpExposure(getStoredExposureStatus());
@@ -192,16 +197,26 @@ export default function Page() {
     unsubsRef.current.push(
       a.onStatus((s) => {
         setStatus(s, a.kind);
-        // Webrtc mode + autoReconnect on + adapter went to error + user did
-        // not click Disconnect → schedule a reconnect. This catches the ~25s
-        // mDNS-stale drop until we find a real fix.
+        // A healthy (re)connection clears any lingering stale-loop banner.
+        if (s.state === "connected" || s.state === "connecting") {
+          setMdnsStalled(false);
+        }
         if (
           a.kind === "webrtc" &&
           s.state === "error" &&
-          autoReconnect &&
           !userDisconnectedRef.current
         ) {
-          scheduleReconnectRef.current();
+          // Deterministic mDNS-stale death: auto-reconnecting would just loop
+          // back into the same ~25s drop. Halt the loop and prompt the user
+          // for the real fix (real-IP mode) instead.
+          if (s.reason === "mdns-stale") {
+            setMdnsStalled(true);
+            return;
+          }
+          // Genuinely transient error → reconnect if the user allows it.
+          if (autoReconnect) {
+            scheduleReconnectRef.current();
+          }
         }
       })
     );
@@ -394,23 +409,66 @@ export default function Page() {
         </div>
       )}
 
-      {/* Body: main + sidebar */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_340px]">
+      {/* mDNS-stale stall banner — the connection kept dying at ~25s because
+          Chrome's anonymized mDNS ICE candidates lapse and the glasses lose
+          the route back. We stopped the reconnect loop; the user needs to
+          enable real-IP mode (or disable Chrome's mDNS flag) and reconnect. */}
+      {mdnsStalled && (
+        <div className="mb-3 rounded border border-alert/60 bg-alert/10 px-3 py-2 font-mono text-[11px]">
+          <div className="text-alert">
+            STREAM STALLED · media died at ~25s on anonymized mDNS candidates —
+            the glasses can&apos;t keep resolving this client&apos;s address, so
+            auto-reconnect was halted to avoid looping.
+          </div>
+          <div className="mt-1 text-muted">
+            Fix: expose your real LAN IP, then reconnect. Either grant mic
+            permission below (Chrome stops anonymizing once a media device is
+            granted) or set{" "}
+            <span className="text-text">
+              chrome://flags/#enable-webrtc-hide-local-ips-with-mdns
+            </span>{" "}
+            to Disabled.
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {ipExposure !== "granted" && ipExposure !== "unavailable" && (
+              <button
+                onClick={onRequestIpExposure}
+                className="rounded border border-signal px-2 py-0.5 text-signal hover:bg-signal/20"
+              >
+                grant mic (real-IP mode)
+              </button>
+            )}
+            <button
+              onClick={connect}
+              className="rounded border border-alert px-2 py-0.5 text-alert hover:bg-alert/20"
+            >
+              reconnect
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Body: telemetry rail + main + controls sidebar. The TELEMETRY card
+          lives in its own left column so every per-frame readout stays in
+          frame during a screen recording without scrolling. */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[260px_1fr_340px]">
+        <aside className="space-y-4">
+          <HudPanel />
+        </aside>
+
         <div className="space-y-4">
           <SceneViewer
             ref={setSceneViewerRef}
             stream={inReplay ? null : scene}
             replaySrc={replaySceneSrc}
           />
-          {/* Main-column layout for the demo screen recording: eye cameras
-              first, then the rolling pupil chart, then the wide TELEMETRY
-              card with all the per-frame numerical readouts. */}
+          {/* Center column for the demo screen recording: scene viewer, then
+              the eye cameras, the rolling pupil chart, and the timeline. */}
           <EyeCameraGrid
             stream={inReplay ? null : eye}
             replaySrc={replayEyeSrc}
           />
           <PupilTrend />
-          <HudPanel />
           <Timeline />
         </div>
 

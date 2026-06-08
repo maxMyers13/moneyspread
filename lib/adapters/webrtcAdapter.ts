@@ -88,6 +88,12 @@ export class WebRtcTobiiAdapter implements TobiiAdapter {
   // anonymized mDNS *.local host candidates the browser emits, which the
   // glasses' WebRTC server often can't resolve (docs lines 632-642).
   private remoteHostIp: string | null = null;
+  // Set when we trickle a `*.local` host candidate that we could NOT rewrite
+  // to an explicit IP (because !remote-host failed). Such a session is on
+  // borrowed time — the glasses' mDNS resolution lapses ~25s in and the media
+  // path dies. We use this to tag the eventual failure as "mdns-stale" so the
+  // UI stops blindly reconnecting into the same doomed path.
+  private sentMdnsCandidate = false;
 
   // --- Resilience bookkeeping ---------------------------------------------
   private keepAliveFailures = 0;
@@ -132,6 +138,7 @@ export class WebRtcTobiiAdapter implements TobiiAdapter {
   // -------------------------------------------------------------------------
 
   async connect(): Promise<void> {
+    this.sentMdnsCandidate = false;
     this.emitStatus({ state: "connecting", message: "negotiating WebRTC" });
     logger.info("adapter", "connect() starting", {
       httpBase: this.httpBase || "(unset)",
@@ -235,7 +242,10 @@ export class WebRtcTobiiAdapter implements TobiiAdapter {
               if (this.pc && this.pc.connectionState === "disconnected") {
                 this.emitStatus({
                   state: "error",
-                  message: "peer disconnected (no recovery)",
+                  message: this.sentMdnsCandidate
+                    ? "peer disconnected — mDNS candidate went stale (~25s)"
+                    : "peer disconnected (no recovery)",
+                  reason: this.sentMdnsCandidate ? "mdns-stale" : undefined,
                 });
               }
             }, DISCONNECT_GRACE_MS);
@@ -422,6 +432,9 @@ export class WebRtcTobiiAdapter implements TobiiAdapter {
       let ok = false;
       if (typeof result === "boolean") {
         ok = result;
+      } else if (typeof result === "string") {
+        // Newer FW returns a bare status string e.g. "success".
+        ok = /success|ok|done|complete/i.test(result);
       } else if (result && typeof result === "object") {
         const r = result as { success?: boolean; type?: string };
         if (typeof r.success === "boolean") ok = r.success;
@@ -732,6 +745,12 @@ export class WebRtcTobiiAdapter implements TobiiAdapter {
    *   candidate:<foundation> <component> <transport> <priority> <addr> <port> typ <type> ...
    */
   private resolveLocalCandidate(cand: string): string {
+    // No explicit IP to rewrite with, but the candidate is an anonymized mDNS
+    // host → this is the doomed path. Flag it so the eventual media death is
+    // attributed to "mdns-stale" rather than treated as a transient blip.
+    if (!this.remoteHostIp && /\.local\b/i.test(cand)) {
+      this.sentMdnsCandidate = true;
+    }
     if (!this.remoteHostIp || !/\.local\b/i.test(cand)) return cand;
     const rewritten = cand.replace(
       /^(candidate:\S+ \d+ \S+ \d+ )(\S+\.local)( \d+ typ )/i,

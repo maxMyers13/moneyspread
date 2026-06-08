@@ -31,6 +31,12 @@ export type ConnectionState =
 export interface AdapterStatus {
   state: ConnectionState;
   message?: string;
+  /** Machine-readable cause for an error state. Lets the UI distinguish a
+   *  recoverable blip (auto-reconnect) from a deterministic failure that
+   *  reconnecting won't fix and needs user action instead.
+   *  - "mdns-stale": media died because we're on anonymized mDNS ICE
+   *    candidates whose ~25s resolution lapsed; reconnecting just loops. */
+  reason?: "mdns-stale";
 }
 
 /** Unsubscribe handle returned by event subscriptions. */

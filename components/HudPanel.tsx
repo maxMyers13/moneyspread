@@ -2,12 +2,11 @@
 
 // HudPanel — the dense numerical telemetry card.
 //
-// Used to live in the right sidebar where ~340 px of width forced a tall
-// vertical stack of label / value rows. Now sits in the main column below
-// the eye cameras, which is much wider than tall — so each stat becomes a
-// small tile (label on top, value below) arranged in a responsive grid
-// that uses the full width. Easier to scan during a demo screen recording
-// without scrolling.
+// Lives in its own narrow left column so every per-frame readout stays in
+// frame during a demo screen recording without scrolling. Each stat is a
+// small tile (label on top, value below); at the narrow column width they
+// pack two-up, and collapse to a denser grid at small viewports where the
+// column spans the full width.
 
 import { useStore } from "@/lib/store";
 
@@ -68,11 +67,11 @@ export default function HudPanel() {
 
   return (
     <div className="space-y-3 rounded-md border border-line bg-panel p-3">
-      {/* Telemetry tiles — laid out left-to-right; wraps to fewer columns
-          at small widths. Seven stats, so 7 columns at the largest tier
-          (>= 1280 px); halves cleanly at smaller breakpoints. */}
+      {/* Telemetry tiles — pack three-up on small/wide viewports where the
+          column stretches full width, then settle to two-up once the layout
+          breaks into the narrow left rail at lg. */}
       <SectionLabel>telemetry</SectionLabel>
-      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-2">
         <Stat label="t (s)" value={fmt(d.t, 2)} />
         <Stat
           label="gaze x / y"
@@ -106,10 +105,10 @@ export default function HudPanel() {
         />
       </div>
 
-      {/* Pupil tiles — five stats; 5 columns at md and up so they all sit
-          on one row alongside each other on a 16:9 demo crop. */}
+      {/* Pupil tiles — match the telemetry grid: three-up when full width,
+          two-up in the narrow left rail at lg. */}
       <SectionLabel>pupil (mm)</SectionLabel>
-      <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+      <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-2">
         <Stat label="left" value={fmt(d.pupilL)} />
         <Stat label="right" value={fmt(d.pupilR)} />
         <Stat label="mean" value={fmt(d.pupilMeanVal)} tone="signal" />
