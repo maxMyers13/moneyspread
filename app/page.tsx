@@ -393,14 +393,14 @@ export default function Page() {
             stream={inReplay ? null : scene}
             replaySrc={replaySceneSrc}
           />
-          {/* Main-column layout for the demo screen recording:
-              eye cameras + pupil chart visible side-by-side in space,
-              then the wide TELEMETRY card with all pupil numbers below. */}
-          <PupilTrend />
+          {/* Main-column layout for the demo screen recording: eye cameras
+              first, then the rolling pupil chart, then the wide TELEMETRY
+              card with all the per-frame numerical readouts. */}
           <EyeCameraGrid
             stream={inReplay ? null : eye}
             replaySrc={replayEyeSrc}
           />
+          <PupilTrend />
           <HudPanel />
           <Timeline />
         </div>
