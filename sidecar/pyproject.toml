@@ -5,7 +5,9 @@ description = "Sidecar service for Tobii Pro Glasses 3 OKN viewer: RTSP-based re
 requires-python = ">=3.12,<3.14"
 dependencies = [
     "fastapi>=0.115",
+    "httpx>=0.28.1",
     "uvicorn[standard]>=0.32",
+    "websockets>=16.0",
 ]
 
 [project.scripts]

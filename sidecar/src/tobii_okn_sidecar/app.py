@@ -12,7 +12,7 @@ us at http://localhost:8765, and we don't ship behind a reverse proxy.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
@@ -77,7 +77,7 @@ async def health() -> HealthResponse:
     return HealthResponse(
         status="ok",
         version=__version__,
-        time=datetime.now(timezone.utc).isoformat(),
+        time=datetime.now(UTC).isoformat(),
     )
 
 
