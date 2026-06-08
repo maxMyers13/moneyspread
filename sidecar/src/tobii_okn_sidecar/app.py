@@ -12,7 +12,10 @@ us at http://localhost:8765, and we don't ship behind a reverse proxy.
 from __future__ import annotations
 
 import logging
+import os
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
@@ -20,13 +23,36 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from . import __version__
+from .storage import RecordingsStore, RecordingSummary
 
 logger = logging.getLogger("tobii_okn_sidecar")
+
+
+def _recordings_root() -> Path:
+    """SIDECAR_RECORDINGS_DIR overrides the default `./recordings/`. Stored
+    relative to the sidecar's CWD; we don't try to be clever about user dirs
+    because the viewer runs locally and the user controls cwd."""
+    raw = os.environ.get("SIDECAR_RECORDINGS_DIR", "recordings")
+    return Path(raw).resolve()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """One-shot startup: instantiate the recordings store and reconcile any
+    sessions that were in flight when the sidecar last died."""
+    store = RecordingsStore(_recordings_root())
+    aborted = store.reconcile_aborted()
+    if aborted:
+        logger.warning("startup: marked %d recording(s) as aborted: %s", len(aborted), aborted)
+    app.state.store = store
+    logger.info("recordings dir: %s", store.root)
+    yield
 
 app = FastAPI(
     title="tobii-okn-sidecar",
     version=__version__,
     description="Companion service for the Tobii OKN viewer — recording, replay, export.",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -52,15 +78,6 @@ class HealthResponse(BaseModel):
     """ISO-8601 UTC timestamp; mostly for the browser to detect clock skew."""
 
 
-class RecordingSummary(BaseModel):
-    id: str
-    """UUID assigned at start-of-recording."""
-    started_at: str
-    stopped_at: str | None
-    duration_s: float | None
-    """None while the recording is in progress."""
-
-
 class StartResponse(BaseModel):
     id: str
     started_at: str
@@ -83,17 +100,24 @@ async def health() -> HealthResponse:
 
 @app.get("/recordings", response_model=list[RecordingSummary])
 async def list_recordings() -> list[RecordingSummary]:
-    # TODO(next session): enumerate ./recordings/*.json (or the storage layout
-    # we pick) and return parsed metadata. For now: empty list so the browser
-    # can render the "no recordings yet" state.
-    return []
+    store: RecordingsStore = app.state.store
+    return store.list_summaries()
+
+
+@app.get("/recordings/{recording_id}", response_model=RecordingSummary)
+async def get_recording(recording_id: str) -> RecordingSummary:
+    store: RecordingsStore = app.state.store
+    meta = store.load_meta(recording_id)
+    if meta is None:
+        raise HTTPException(status_code=404, detail=f"recording not found: {recording_id}")
+    return RecordingSummary.from_meta(meta)
 
 
 @app.post("/record/start", response_model=StartResponse, status_code=501)
 async def record_start() -> StartResponse:
     raise HTTPException(
         status_code=501,
-        detail="recording not yet implemented — wire g3pylib in the next slice",
+        detail="recording start handler lands in slice A3 — Recording.start() is ready",
     )
 
 
@@ -101,13 +125,5 @@ async def record_start() -> StartResponse:
 async def record_stop(recording_id: str) -> RecordingSummary:
     raise HTTPException(
         status_code=501,
-        detail=f"recording not yet implemented (id={recording_id})",
-    )
-
-
-@app.get("/recordings/{recording_id}", response_model=RecordingSummary, status_code=501)
-async def get_recording(recording_id: str) -> RecordingSummary:
-    raise HTTPException(
-        status_code=501,
-        detail=f"replay metadata not yet implemented (id={recording_id})",
+        detail=f"recording stop handler lands in slice A3 (id={recording_id})",
     )
