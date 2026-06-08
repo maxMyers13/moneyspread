@@ -296,9 +296,15 @@ export default function Controls({
     if (kind === "csv") {
       download(`okn-session-${ts}.csv`, recordedToCsv(rows), "text/csv");
     } else {
+      // JSON bundles the per-sample rows with the manual event markers so a
+      // single file is a complete session record (FR-11 + FR-12).
       download(
         `okn-session-${ts}.json`,
-        JSON.stringify(rows, null, 2),
+        JSON.stringify(
+          { events: useStore.getState().events, samples: rows },
+          null,
+          2
+        ),
         "application/json"
       );
     }
@@ -444,6 +450,29 @@ export default function Controls({
             className="accent-signal"
           />
         </label>
+
+        {/* Eye-camera tiling. The glasses send one composite of the 4 eye
+            sensors; pick the split that lines up with the live feed. */}
+        <div>
+          <div className="mb-1 font-mono text-[10px] uppercase tracking-widest text-muted">
+            eye layout
+          </div>
+          <div className="grid grid-cols-4 gap-1">
+            {(["2x2", "row", "col", "full"] as const).map((l) => (
+              <button
+                key={l}
+                onClick={() => setSetting("eyeLayout", l)}
+                className={`rounded border px-1 py-1 font-mono text-[10px] uppercase ${
+                  cfg.eyeLayout === l
+                    ? "border-signal bg-signal/10 text-signal"
+                    : "border-line text-muted"
+                }`}
+              >
+                {l}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Export */}

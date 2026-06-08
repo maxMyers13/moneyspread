@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import SceneViewer from "@/components/SceneViewer";
-import EyeCameraInset from "@/components/EyeCameraInset";
+import EyeCameraGrid from "@/components/EyeCameraGrid";
 import HudPanel from "@/components/HudPanel";
 import PupilTrend from "@/components/PupilTrend";
 import Controls from "@/components/Controls";
@@ -12,6 +12,8 @@ import { MockTobiiAdapter } from "@/lib/adapters/mockAdapter";
 import { WebRtcTobiiAdapter } from "@/lib/adapters/webrtcAdapter";
 import type { AdapterKind, TobiiAdapter, Unsubscribe } from "@/lib/adapters/types";
 import RecordingsList from "@/components/RecordingsList";
+import EventMarkers from "@/components/EventMarkers";
+import Timeline from "@/components/Timeline";
 import { installConsoleTap, logger } from "@/lib/logger";
 import {
   getStoredExposureStatus,
@@ -360,13 +362,12 @@ export default function Page() {
             stream={inReplay ? null : scene}
             replaySrc={replaySceneSrc}
           />
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <EyeCameraInset
-              stream={inReplay ? null : eye}
-              replaySrc={replayEyeSrc}
-            />
-            <PupilTrend />
-          </div>
+          <EyeCameraGrid
+            stream={inReplay ? null : eye}
+            replaySrc={replayEyeSrc}
+          />
+          <PupilTrend />
+          <Timeline />
         </div>
 
         <aside className="space-y-4">
@@ -386,6 +387,7 @@ export default function Page() {
             disabledForReplay={inReplay}
           />
           <HudPanel />
+          <EventMarkers />
           <RecordingsList
             recordingUuid={deviceRecordingUuid}
             refreshKey={recordingsRefresh}

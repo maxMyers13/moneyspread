@@ -339,7 +339,7 @@ You should see the OKN Viewer interface.
 In the right-hand panel, under **CONTROLS**, the `WEBRTC` source should already be highlighted. Click **CONNECT**. Within ~5 seconds you should see:
 
 - the scene camera (what the wearer is seeing) in the big top panel
-- the eye camera (small, black-and-white - that's normal, it's an infrared sensor) bottom-left
+- the eye cameras (black-and-white - that's normal, they're infrared sensors) as a 4-panel grid below the scene, one panel per eye angle
 - a small dot moving over the scene video, tracking the wearer's gaze
 
 If something goes wrong, click **PROBE GLASSES** first - it'll tell you whether your computer can reach the glasses at all and explain why if not.
@@ -355,15 +355,17 @@ If something goes wrong, click **PROBE GLASSES** first - it'll tell you whether 
 
 ## Part 4 - Using the viewer
 
-The interface has four parts:
+The interface, top to bottom, is:
 
 ### Scene panel (top, large)
 What the wearer sees, plus the gaze dot on top, plus the optional horizontal reference line. You can drag the line up and down - when the wearer's gaze crosses below it, the "BELOW LINE" telemetry flips to `yes`.
 
-### Eye camera (bottom-left)
-The wearer's eyes, captured by an infrared sensor in the glasses. Black-and-white is normal. Useful for confirming the glasses aren't slipping or that the wearer is blinking when the gaze data goes weird.
+### Eye cameras (4-panel grid, under the scene)
+The glasses carry four infrared eye sensors - two angles per eye. They arrive over the network as a *single* composite video, which the viewer splits into four panels so each angle gets its own view. Black-and-white is normal. Useful for confirming the glasses aren't slipping or that the wearer is blinking when the gaze data goes weird.
 
-### Pupil trend chart (bottom-right)
+The composite's exact tiling isn't documented by Tobii, so the **EYE LAYOUT** control (in the sidebar) lets you pick the split that lines up with the live feed: `2x2` (default), `row` (1x4), `col` (4x1), or `full` (the whole composite in one panel). Pick whichever makes the four eye views land in their own panels.
+
+### Pupil trend chart
 A rolling chart of pupil size over the last few seconds, compared to a baseline. Big spikes can indicate cognitive load or surprise.
 
 ### Controls + telemetry (right sidebar)
@@ -456,9 +458,11 @@ lib/useReplayGaze.ts          drives the store from a recording's gazedata.gz
 lib/sidecarApi.ts             TS client mirroring the sidecar's HTTP surface
 components/
   SceneViewer + GazeOverlay   <video> + canvas reticle/line/trail
-  EyeCameraInset              IR eye camera
+  EyeCameraGrid               splits the single eye composite into 4 angle panels
   HudPanel                    dense telemetry readout
   PupilTrend                  uPlot mean-vs-baseline chart
+  EventMarkers                drop/list stimulus/direction/trial/note markers (FR-12)
+  Timeline                    canvas review track: mode/below/blink/events + playhead
   Controls                    connect/calibrate/record/sliders/export buttons
   RecordingsList              device recordings sidebar + replay entrypoint
   ExportButton                per-recording export controls
@@ -502,8 +506,8 @@ Tobii's official Python SDK pins `av==10.0.0` (PyAV), which won't build against 
 - **Eye-camera video** isn't captured to the SD card by default (manifest reports `eyecameras: null`). The live eye-camera view still works.
 
 ### Roadmap
-- **v1 (done):** live scene + gaze marker, eye-camera inset, pupil HUD, blink/direction/pursuit/saccade heuristics, CSV/JSON export.
-- **v1.1 (done):** Python sidecar - device-driven recording, scrubbable replay, annotated video export.
+- **v1 (done):** live scene + gaze marker, eye-camera view, pupil HUD, blink/direction/pursuit/saccade heuristics, CSV/JSON export.
+- **v1.1 (done):** Python sidecar - device-driven recording, scrubbable replay, annotated video export, event markers (stimulus/direction/trial/notes) with review timeline.
 - **v2:** OKN metrics - saccade frequency, pursuit direction consistency, below-line duration, trial summaries. After protocol validation.
 
 ---

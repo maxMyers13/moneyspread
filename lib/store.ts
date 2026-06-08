@@ -16,6 +16,34 @@ import {
   type MovementMode,
 } from "./metrics";
 
+// FR-12 event markers. Tags the lab can drop during a trial; exported
+// alongside the per-sample rows. Kinds map to the PRD's named tags
+// (stimulus start/stop, direction change, trial number) plus a free note.
+export type EventKind =
+  | "stimulus-start"
+  | "stimulus-stop"
+  | "direction-change"
+  | "trial"
+  | "note";
+
+export interface SessionEvent {
+  id: string;
+  t: number; // stream/replay time (s) when the marker was dropped
+  recordedAt: number; // wall-clock ms
+  kind: EventKind;
+  trial: number; // trial active when the marker was dropped
+  note: string; // free text (the label for "note" kind; optional otherwise)
+}
+
+// One downsampled point for the review timeline (§9). Always-on, independent
+// of the local CSV capture flag, so the timeline works live and in replay.
+export interface TimelinePoint {
+  t: number;
+  below: boolean;
+  blink: boolean;
+  mode: MovementMode;
+}
+
 export interface Settings {
   showLine: boolean;
   lineY: number; // normalized 0..1
@@ -27,7 +55,14 @@ export interface Settings {
   blinkMinMs: number;
   baselineWindowS: number;
   minCrossingMs: number;
+  eyeLayout: EyeLayout;
 }
+
+// The glasses deliver ONE eye-camera video that's a composite of the 4 IR eye
+// sensors (2 angles per eye). We crop that single frame into 4 panels; the tile
+// arrangement isn't documented, so the layout is user-selectable against the
+// live device. "full" keeps the whole composite in a single panel.
+export type EyeLayout = "2x2" | "row" | "col" | "full";
 
 export interface Derived {
   t: number;
@@ -65,11 +100,17 @@ interface StoreState {
   recording: boolean;
   recorded: RecordedRow[];
 
+  // FR-12 + timeline
+  events: SessionEvent[];
+  trial: number;
+  timeline: TimelinePoint[];
+
   // internals
   _prevSmooth: [number, number] | null;
   _prevT: number | null;
   _invalidSinceMs: number | null;
   _belowSinceMs: number | null;
+  _lastTimelineT: number | null;
 
   // actions
   setStatus: (s: AdapterStatus, kind?: string) => void;
@@ -78,10 +119,26 @@ interface StoreState {
   setPixel: (px: [number, number] | null) => void;
   setRecording: (on: boolean) => void;
   clearBuffers: () => void;
+
+  // event markers
+  markEvent: (kind: EventKind, note?: string) => void;
+  nextTrial: () => void;
+  setTrial: (n: number) => void;
+  removeEvent: (id: string) => void;
 }
 
 const TRAIL_MAX = 140;
 const PUPIL_MAX = 3600; // ~60s at 60Hz
+const TIMELINE_MAX = 6000; // capped ring; ~300s at the 20Hz downsample below
+const TIMELINE_MIN_DT = 0.05; // downsample timeline to ~20Hz to widen its span
+
+let _eventSeq = 0;
+function makeEventId(): string {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `evt-${Date.now()}-${_eventSeq++}`;
+}
 
 const defaultSettings: Settings = {
   showLine: true,
@@ -94,6 +151,7 @@ const defaultSettings: Settings = {
   blinkMinMs: 80,
   baselineWindowS: 10,
   minCrossingMs: 150,
+  eyeLayout: "2x2",
 };
 
 const emptyDerived: Derived = {
@@ -123,10 +181,14 @@ export const useStore = create<StoreState>()((set, get) => ({
   pupilHistory: [],
   recording: false,
   recorded: [],
+  events: [],
+  trial: 1,
+  timeline: [],
   _prevSmooth: null,
   _prevT: null,
   _invalidSinceMs: null,
   _belowSinceMs: null,
+  _lastTimelineT: null,
 
   setStatus: (s, kind) =>
     set((st) => ({
@@ -210,6 +272,21 @@ export const useStore = create<StoreState>()((set, get) => ({
       if (trail.length > TRAIL_MAX) trail.shift();
     }
 
+    // review timeline — downsampled, always-on (not gated by recording).
+    let timeline = st.timeline;
+    let lastTimelineT = st._lastTimelineT;
+    if (lastTimelineT == null || s.t - lastTimelineT >= TIMELINE_MIN_DT) {
+      timeline = st.timeline.slice();
+      timeline.push({
+        t: s.t,
+        below: belowStable,
+        blink,
+        mode: blink ? "idle" : mode,
+      });
+      if (timeline.length > TIMELINE_MAX) timeline.shift();
+      lastTimelineT = s.t;
+    }
+
     const derived: Derived = {
       t: s.t,
       gazeRaw: s.gaze2d,
@@ -231,10 +308,12 @@ export const useStore = create<StoreState>()((set, get) => ({
       derived,
       trail,
       pupilHistory,
+      timeline,
       _prevSmooth: gazeSmooth,
       _prevT: s.t,
       _invalidSinceMs: invalidSince,
       _belowSinceMs: belowSince,
+      _lastTimelineT: lastTimelineT,
     };
 
     if (st.recording) {
@@ -257,12 +336,57 @@ export const useStore = create<StoreState>()((set, get) => ({
       trail: [],
       pupilHistory: [],
       recorded: [],
+      events: [],
+      trial: 1,
+      timeline: [],
       _prevSmooth: null,
       _prevT: null,
       _invalidSinceMs: null,
       _belowSinceMs: null,
+      _lastTimelineT: null,
       derived: emptyDerived,
     }),
+
+  markEvent: (kind, note = "") =>
+    set((st) => ({
+      events: [
+        ...st.events,
+        {
+          id: makeEventId(),
+          t: st.derived.t,
+          recordedAt: Date.now(),
+          kind,
+          trial: st.trial,
+          note,
+        },
+      ],
+    })),
+
+  // Advance the trial counter and drop a "trial" marker at the current time so
+  // the boundary is recoverable from the exported events alone.
+  nextTrial: () =>
+    set((st) => {
+      const trial = st.trial + 1;
+      return {
+        trial,
+        events: [
+          ...st.events,
+          {
+            id: makeEventId(),
+            t: st.derived.t,
+            recordedAt: Date.now(),
+            kind: "trial" as EventKind,
+            trial,
+            note: `trial ${trial}`,
+          },
+        ],
+      };
+    }),
+
+  setTrial: (n) => set({ trial: Math.max(1, Math.floor(n) || 1) }),
+
+  removeEvent: (id) =>
+    set((st) => ({ events: st.events.filter((e) => e.id !== id) })),
 }));
 
 // ---- export helpers --------------------------------------------------------
@@ -302,6 +426,21 @@ export function recordedToCsv(rows: RecordedRow[]): string {
       r.pupilMeanVal?.toFixed(3) ?? "",
       r.pupilBaseline?.toFixed(3) ?? "",
       r.pupilDelta?.toFixed(3) ?? "",
+    ].join(",")
+  );
+  return [header.join(","), ...lines].join("\n");
+}
+
+export function eventsToCsv(events: SessionEvent[]): string {
+  const header = ["t", "kind", "trial", "note", "recorded_at"];
+  const esc = (s: string) => `"${s.replace(/"/g, '""')}"`;
+  const lines = events.map((e) =>
+    [
+      e.t.toFixed(4),
+      e.kind,
+      String(e.trial),
+      esc(e.note),
+      new Date(e.recordedAt).toISOString(),
     ].join(",")
   );
   return [header.join(","), ...lines].join("\n");
