@@ -1,4 +1,4 @@
-# moneyspread — eye-tracking viewer for Tobii Pro Glasses 3
+# moneyspread - eye-tracking viewer for Tobii Pro Glasses 3
 
 [![status: research tool](https://img.shields.io/badge/status-research--tool-blue)]() [![platform: macOS · Windows](https://img.shields.io/badge/platform-macOS%20·%20Windows-lightgrey)]()
 
@@ -19,10 +19,10 @@ You can **record** a session straight to the glasses' SD card, **replay** it lat
 ## Table of contents
 
 - [Before you start](#before-you-start)
-- **Part 1 — One-time setup** — [macOS](#part-1macos--one-time-setup) · [Windows](#part-1windows--one-time-setup)
-- [Part 2 — Configure the project](#part-2--configure-the-project)
-- [Part 3 — Daily use](#part-3--daily-use)
-- [Part 4 — Using the viewer](#part-4--using-the-viewer)
+- **Part 1 - One-time setup** - [macOS](#part-1macos--one-time-setup) · [Windows](#part-1windows--one-time-setup)
+- [Part 2 - Configure the project](#part-2--configure-the-project)
+- [Part 3 - Daily use](#part-3--daily-use)
+- [Part 4 - Using the viewer](#part-4--using-the-viewer)
 - [Troubleshooting](#troubleshooting)
 - [For developers](#for-developers)
 
@@ -45,21 +45,21 @@ You do **not** need:
 
 ### A note on networks (important)
 
-The glasses broadcast their own Wi-Fi network. To use the live view, your Mac has to connect to **that** Wi-Fi — which means, while you're using the app, **your Mac will not have internet access**. That's normal. Reconnect to your regular Wi-Fi when you're done.
+The glasses broadcast their own Wi-Fi network. To use the live view, your Mac has to connect to **that** Wi-Fi - which means, while you're using the app, **your Mac will not have internet access**. That's normal. Reconnect to your regular Wi-Fi when you're done.
 
 ---
 
-## Part 1 (macOS) — One-time setup
+## Part 1 (macOS) - One-time setup
 
-> On Windows? Skip ahead to **[Part 1 (Windows) — One-time setup](#part-1windows--one-time-setup)**.
+> On Windows? Skip ahead to **[Part 1 (Windows) - One-time setup](#part-1windows--one-time-setup)**.
 
-### Step 1.1 — Open the Terminal
+### Step 1.1 - Open the Terminal
 
 Press `⌘ + Space` to open Spotlight, type `Terminal`, press Return. A black-or-white window opens with a blinking cursor. This is where you'll paste the commands below. **Every command in a grey box should be copy-pasted and run with Return.**
 
-### Step 1.2 — Install Homebrew (a tool that installs other tools)
+### Step 1.2 - Install Homebrew (a tool that installs other tools)
 
-Homebrew is the standard "package manager" for macOS — think of it as an app store for command-line tools. We'll use it to install everything else.
+Homebrew is the standard "package manager" for macOS - think of it as an app store for command-line tools. We'll use it to install everything else.
 
 Paste this into Terminal and press Return:
 
@@ -67,7 +67,7 @@ Paste this into Terminal and press Return:
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
 
-It will ask for your Mac password. **Type it (you won't see anything appear as you type — that's normal)** and press Return. The whole thing takes 5–10 minutes. When it finishes, follow any "Next steps" instructions it prints (usually one or two lines you also paste and run).
+It will ask for your Mac password. **Type it (you won't see anything appear as you type - that's normal)** and press Return. The whole thing takes 5–10 minutes. When it finishes, follow any "Next steps" instructions it prints (usually one or two lines you also paste and run).
 
 To check it worked, run:
 
@@ -77,7 +77,7 @@ brew --version
 
 You should see something like `Homebrew 4.x.x`. If you see "command not found", restart Terminal and try again.
 
-### Step 1.3 — Install the project's dependencies
+### Step 1.3 - Install the project's dependencies
 
 We need four things: **Node.js** (runs the browser app), **pnpm** (downloads the browser app's parts), **Python** (runs the recording/replay helper), and **ffmpeg** (turns recordings into video files). One command does all of it:
 
@@ -93,7 +93,7 @@ node --version && pnpm --version && uv --version && ffmpeg -version | head -1
 
 You should see four lines, each starting with a version number. If any are missing, re-run the `brew install` command.
 
-### Step 1.4 — Download the project
+### Step 1.4 - Download the project
 
 Pick a folder for it. The Documents folder is fine. Paste:
 
@@ -105,7 +105,7 @@ cd moneyspread
 
 `git clone` downloads a copy of the project. `cd moneyspread` moves you inside that folder. **From now on, all the commands assume you're in this folder.** If you close Terminal and re-open it, run `cd ~/Documents/moneyspread` to get back.
 
-### Step 1.5 — Install the browser app's dependencies
+### Step 1.5 - Install the browser app's dependencies
 
 ```bash
 pnpm install
@@ -113,7 +113,7 @@ pnpm install
 
 This downloads a few hundred small libraries the app needs. It takes 1–3 minutes.
 
-### Step 1.6 — Install the recording helper's dependencies
+### Step 1.6 - Install the recording helper's dependencies
 
 ```bash
 cd sidecar
@@ -123,21 +123,21 @@ cd ..
 
 `uv sync` sets up Python and downloads the helper's libraries. The `cd ..` at the end takes you back out of the `sidecar` folder.
 
-You're done installing things. ✅ Skip ahead to **[Part 2 — Configure the project](#part-2--configure-the-project)**.
+You're done installing things. ✅ Skip ahead to **[Part 2 - Configure the project](#part-2--configure-the-project)**.
 
 ---
 
-## Part 1 (Windows) — One-time setup
+## Part 1 (Windows) - One-time setup
 
 > On macOS? Use **[Part 1 (macOS)](#part-1macos--one-time-setup)** instead.
 
-### Step 1.1 — Open PowerShell
+### Step 1.1 - Open PowerShell
 
 Press `Win` and type `powershell`. In the search results, click **Windows PowerShell**. A blue (or black) window opens with a `PS C:\Users\You>` prompt. This is where you'll paste the commands below. **Every command in a grey box should be copy-pasted and run with Enter.**
 
-> A faster, nicer alternative is [Windows Terminal](https://aka.ms/terminal) from the Microsoft Store — same idea, prettier and easier to read. Either works for everything below.
+> A faster, nicer alternative is [Windows Terminal](https://aka.ms/terminal) from the Microsoft Store - same idea, prettier and easier to read. Either works for everything below.
 
-### Step 1.2 — Make sure winget is available
+### Step 1.2 - Make sure winget is available
 
 `winget` is Windows' built-in app installer (think of it as a free app store for command-line tools). It ships with Windows 10 (Aug 2021 update or later) and Windows 11. Check it's there:
 
@@ -147,7 +147,7 @@ winget --version
 
 If you see a version number (e.g. `v1.7.x`), you're good. If you see "command not found" or "not recognized", install **App Installer** from the Microsoft Store and try again.
 
-### Step 1.3 — Install everything we need
+### Step 1.3 - Install everything we need
 
 We need five things: **Git** (downloads the project), **Node.js** (runs the browser app), **Python 3.12** + **uv** (runs the recording helper), and **ffmpeg** (turns recordings into video files). One command does it all:
 
@@ -159,7 +159,7 @@ Windows will prompt with a UAC dialog ("Do you want to allow this app to make ch
 
 > If `winget` complains about source agreements the first time, type `Y` and Enter to accept, then re-run the line above.
 
-**Important: close PowerShell and open a new window** after the install finishes. The new tools won't be visible to your current PowerShell session — Windows only picks them up in newly-launched terminals.
+**Important: close PowerShell and open a new window** after the install finishes. The new tools won't be visible to your current PowerShell session - Windows only picks them up in newly-launched terminals.
 
 In the new PowerShell window, verify with:
 
@@ -169,7 +169,7 @@ git --version ; node --version ; python --version ; uv --version ; ffmpeg -versi
 
 You should see five lines, each with a version number. If any are missing, re-run the corresponding `winget install` line.
 
-### Step 1.4 — Install pnpm
+### Step 1.4 - Install pnpm
 
 `pnpm` is the helper that downloads the browser app's parts. It rides on top of Node, which you just installed:
 
@@ -183,7 +183,7 @@ Verify:
 pnpm --version
 ```
 
-### Step 1.5 — Install Bonjour (lets your PC find the glasses)
+### Step 1.5 - Install Bonjour (lets your PC find the glasses)
 
 Windows doesn't natively resolve `.local` hostnames the way Macs do. The glasses identify themselves with a `.local` name (e.g. `tg03b-080200099999.local`), so without this you can't reach them by name. The fix is Apple's free **Bonjour Print Services**:
 
@@ -192,7 +192,7 @@ Windows doesn't natively resolve `.local` hostnames the way Macs do. The glasses
 
 Bonjour is harmless: it's a tiny background service that resolves `.local` names on your local network. Many PCs already have it (any iTunes install brings it).
 
-### Step 1.6 — Download the project
+### Step 1.6 - Download the project
 
 ```powershell
 cd $HOME\Documents
@@ -202,7 +202,7 @@ cd moneyspread
 
 `git clone` downloads a copy of the project. `cd moneyspread` moves you inside that folder. **From now on, all the commands assume you're in this folder.** If you close PowerShell and re-open it, run `cd $HOME\Documents\moneyspread` to get back.
 
-### Step 1.7 — Install the browser app's dependencies
+### Step 1.7 - Install the browser app's dependencies
 
 ```powershell
 pnpm install
@@ -210,7 +210,7 @@ pnpm install
 
 1–3 minutes. If you see a warning about "scripts" needing approval, type `a` (approve all) and Enter.
 
-### Step 1.8 — Install the recording helper's dependencies
+### Step 1.8 - Install the recording helper's dependencies
 
 ```powershell
 cd sidecar
@@ -222,7 +222,7 @@ You're done installing things. ✅
 
 ---
 
-## Part 2 — Configure the project
+## Part 2 - Configure the project
 
 We need to tell the app which Tobii unit to talk to. **Find your glasses' serial number** (the `TG03B-080200012671`-style sticker on the recording unit).
 
@@ -255,15 +255,15 @@ That's all the configuration. The recording helper picks up the same hostname fr
 
 ---
 
-## Part 3 — Daily use
+## Part 3 - Daily use
 
 Each time you want to use the glasses, do this:
 
-### Step 3.1 — Power on the glasses
+### Step 3.1 - Power on the glasses
 
 Hold the recording unit's power button until the LED comes on. Wait ~30 seconds for it to fully boot.
 
-### Step 3.2 — Connect your computer to the glasses' Wi-Fi
+### Step 3.2 - Connect your computer to the glasses' Wi-Fi
 
 - **macOS**: click the Wi-Fi icon in the menu bar.
 - **Windows**: click the network icon in the system tray (bottom-right).
@@ -272,7 +272,7 @@ Look for a network named after the serial (e.g., `TG03B-080200099999`). Connect 
 
 > You'll lose internet for the duration. That's expected.
 
-### Step 3.3 — Start the app
+### Step 3.3 - Start the app
 
 Open your terminal (Terminal on Mac, PowerShell on Windows):
 
@@ -297,7 +297,7 @@ You'll see a few lines, ending with:
 
 Leave that terminal window open.
 
-### Step 3.4 — (Optional) Start the recording helper
+### Step 3.4 - (Optional) Start the recording helper
 
 If you want to record sessions, replay them, or export annotated videos, **open a second terminal window** (`⌘ + N` in Terminal on Mac; right-click the PowerShell icon in your taskbar → "Windows PowerShell" on Windows) and run:
 
@@ -322,9 +322,9 @@ INFO:     Uvicorn running on http://127.0.0.1:8765
 
 Leave this terminal open too.
 
-If you only want to watch live (no recording/replay/export), you can skip this step. The app degrades gracefully — the "RECORDINGS" panel will say "sidecar offline" but everything else works.
+If you only want to watch live (no recording/replay/export), you can skip this step. The app degrades gracefully - the "RECORDINGS" panel will say "sidecar offline" but everything else works.
 
-### Step 3.5 — Open the viewer
+### Step 3.5 - Open the viewer
 
 Open a web browser (Chrome works best). Go to:
 
@@ -334,17 +334,17 @@ http://localhost:3000
 
 You should see the OKN Viewer interface.
 
-### Step 3.6 — Connect to the live glasses view
+### Step 3.6 - Connect to the live glasses view
 
 In the right-hand panel, under **CONTROLS**, the `WEBRTC` source should already be highlighted. Click **CONNECT**. Within ~5 seconds you should see:
 
 - the scene camera (what the wearer is seeing) in the big top panel
-- the eye camera (small, black-and-white — that's normal, it's an infrared sensor) bottom-left
+- the eye camera (small, black-and-white - that's normal, it's an infrared sensor) bottom-left
 - a small dot moving over the scene video, tracking the wearer's gaze
 
-If something goes wrong, click **PROBE GLASSES** first — it'll tell you whether your computer can reach the glasses at all and explain why if not.
+If something goes wrong, click **PROBE GLASSES** first - it'll tell you whether your computer can reach the glasses at all and explain why if not.
 
-### Step 3.7 — When you're done
+### Step 3.7 - When you're done
 
 - Click **DISCONNECT** in the viewer.
 - Close terminal windows (`⌘ + Q` on Mac, click the X on Windows).
@@ -353,12 +353,12 @@ If something goes wrong, click **PROBE GLASSES** first — it'll tell you whethe
 
 ---
 
-## Part 4 — Using the viewer
+## Part 4 - Using the viewer
 
 The interface has four parts:
 
 ### Scene panel (top, large)
-What the wearer sees, plus the gaze dot on top, plus the optional horizontal reference line. You can drag the line up and down — when the wearer's gaze crosses below it, the "BELOW LINE" telemetry flips to `yes`.
+What the wearer sees, plus the gaze dot on top, plus the optional horizontal reference line. You can drag the line up and down - when the wearer's gaze crosses below it, the "BELOW LINE" telemetry flips to `yes`.
 
 ### Eye camera (bottom-left)
 The wearer's eyes, captured by an infrared sensor in the glasses. Black-and-white is normal. Useful for confirming the glasses aren't slipping or that the wearer is blinking when the gaze data goes weird.
@@ -367,12 +367,12 @@ The wearer's eyes, captured by an infrared sensor in the glasses. Black-and-whit
 A rolling chart of pupil size over the last few seconds, compared to a baseline. Big spikes can indicate cognitive load or surprise.
 
 ### Controls + telemetry (right sidebar)
-- **CONNECT / DISCONNECT** — start/stop the live view.
-- **CALIBRATE** — runs Tobii's built-in calibration routine. Have the wearer follow the dot the glasses display.
-- **● RECORD / ■ STOP** — start/stop a recording on the glasses' SD card. Also captures a local CSV backup. Each recording shows up in the **RECORDINGS** panel below.
-- **REFERENCE LINE** — toggles the horizontal line on/off; the **LINE Y** slider sets its vertical position.
-- **EXPORT CSV / JSON** — saves the *local* (browser-captured) gaze samples to disk.
-- **GAZE TRAIL** — toggles the fading-trail effect behind the gaze dot.
+- **CONNECT / DISCONNECT** - start/stop the live view.
+- **CALIBRATE** - runs Tobii's built-in calibration routine. Have the wearer follow the dot the glasses display.
+- **● RECORD / ■ STOP** - start/stop a recording on the glasses' SD card. Also captures a local CSV backup. Each recording shows up in the **RECORDINGS** panel below.
+- **REFERENCE LINE** - toggles the horizontal line on/off; the **LINE Y** slider sets its vertical position.
+- **EXPORT CSV / JSON** - saves the *local* (browser-captured) gaze samples to disk.
+- **GAZE TRAIL** - toggles the fading-trail effect behind the gaze dot.
 - The **HUD** below shows live numerical readouts.
 
 ### RECORDINGS panel (bottom of sidebar)
@@ -395,11 +395,11 @@ After you record a session, it appears here.
 
 ### Connection works but drops every ~25 seconds
 
-This is a known limitation of the glasses' built-in Wi-Fi access point — it's not strong enough to sustain WebRTC for very long. The app handles it automatically: you'll see a brief flicker, then it reconnects. You can ignore it for short recordings; for longer sessions, recordings go to the SD card and aren't affected.
+This is a known limitation of the glasses' built-in Wi-Fi access point - it's not strong enough to sustain WebRTC for very long. The app handles it automatically: you'll see a brief flicker, then it reconnects. You can ignore it for short recordings; for longer sessions, recordings go to the SD card and aren't affected.
 
 ### `pnpm: command not found` / `uv: command not found` / `'winget' is not recognized`
 
-Close the terminal window and open a brand-new one. The tools were installed but the existing window doesn't know about them yet — Windows and macOS both only show newly-installed tools in newly-launched terminals.
+Close the terminal window and open a brand-new one. The tools were installed but the existing window doesn't know about them yet - Windows and macOS both only show newly-installed tools in newly-launched terminals.
 
 If `winget` itself is missing even in a fresh window, you're on a Windows version older than the 2021 update. Install **App Installer** from the Microsoft Store and try again.
 
@@ -419,7 +419,7 @@ That's the infrared camera. It's supposed to look like that.
 
 ### The export takes forever
 
-That's normal — `ffmpeg` is re-encoding the entire video. Expect roughly real-time (a 5-minute recording takes ~5 minutes to export). The progress bar will update as it goes.
+That's normal - `ffmpeg` is re-encoding the entire video. Expect roughly real-time (a 5-minute recording takes ~5 minutes to export). The progress bar will update as it goes.
 
 ### The viewer opens but nothing happens
 
@@ -471,7 +471,7 @@ sidecar/src/tobii_okn_sidecar/
 ```
 
 ### Why localhost and not Vercel
-The glasses' control API is plain `http://<serial>.local`. A page served over `https` can't call `http`/`ws` endpoints (mixed content). Serving over `http://localhost` is the sweet spot — `localhost` is a secure context (so WebRTC and `getUserMedia` work) but the page itself is `http`, avoiding the downgrade.
+The glasses' control API is plain `http://<serial>.local`. A page served over `https` can't call `http`/`ws` endpoints (mixed content). Serving over `http://localhost` is the sweet spot - `localhost` is a secure context (so WebRTC and `getUserMedia` work) but the page itself is `http`, avoiding the downgrade.
 
 ### WebRTC signaling flow
 Per Tobii's Developer Guide §4.2.1, the **glasses** are the offerer:
@@ -494,7 +494,7 @@ Gaze samples arrive over the g3api WebSocket subscribed to `webrtc/<uuid>:gaze`,
 Phase A2 of the v1.1 sidecar originally pulled RTSP and authored its own `gaze.jsonl` + `scene.mp4`. That gives ~10-100ms gaze-to-video skew because gaze and video arrive over different transports on different clocks. The current implementation uses the device's own `recorder!start` (docs §4.4) which writes to the SD card with perfect in-device sync (docs §6: all streams begin at 0 = first scene-camera frame); we just pull the finished files via the device's own HTTP endpoints (`/recordings/<uuid>/...`). The device serves Range natively, so browser `<video>` seek works through the existing `/g3` proxy without any sidecar caching layer.
 
 ### Why no `g3pylib`
-Tobii's official Python SDK pins `av==10.0.0` (PyAV), which won't build against `ffmpeg` 8 (Cython errors against the modern libavcodec ABI). We use ~5% of g3pylib's surface anyway — just the g3api WebSocket protocol — so we re-implement it in `sidecar/src/tobii_okn_sidecar/device/client.py` (~250 lines).
+Tobii's official Python SDK pins `av==10.0.0` (PyAV), which won't build against `ffmpeg` 8 (Cython errors against the modern libavcodec ABI). We use ~5% of g3pylib's surface anyway - just the g3api WebSocket protocol - so we re-implement it in `sidecar/src/tobii_okn_sidecar/device/client.py` (~250 lines).
 
 ### Known limitations
 - **~25-second WebRTC media drops** on the glasses' built-in 2.4 GHz access point. Likely Wi-Fi power-save or buffer saturation on the device side. The auto-reconnect path keeps the viewer usable (~78% uptime). Recordings go to the SD card and aren't affected. Ethernet end-to-end would eliminate it.
@@ -503,8 +503,8 @@ Tobii's official Python SDK pins `av==10.0.0` (PyAV), which won't build against 
 
 ### Roadmap
 - **v1 (done):** live scene + gaze marker, eye-camera inset, pupil HUD, blink/direction/pursuit/saccade heuristics, CSV/JSON export.
-- **v1.1 (done):** Python sidecar — device-driven recording, scrubbable replay, annotated video export.
-- **v2:** OKN metrics — saccade frequency, pursuit direction consistency, below-line duration, trial summaries. After protocol validation.
+- **v1.1 (done):** Python sidecar - device-driven recording, scrubbable replay, annotated video export.
+- **v2:** OKN metrics - saccade frequency, pursuit direction consistency, below-line duration, trial summaries. After protocol validation.
 
 ---
 
