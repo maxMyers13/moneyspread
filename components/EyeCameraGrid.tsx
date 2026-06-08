@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStore, type EyeLayout } from "@/lib/store";
 
 // A crop rectangle in *source* (composite-frame) pixels, expressed as 0..1
@@ -63,6 +63,13 @@ export default function EyeCameraGrid({
   const crops = cropsFor(layout);
   const isEmpty = !stream && !replaySrc;
 
+  // Track the source video's intrinsic dimensions so we can shape each cell
+  // to match its crop's actual aspect ratio. Hard-coding `aspect-video`
+  // (16:9) on the cells worked only when the source happened to be 16:9 —
+  // the G3 eye composite isn't always, and the mismatch shows up as
+  // asymmetric letterbox bars inside otherwise-correct crops.
+  const [src, setSrc] = useState<{ w: number; h: number } | null>(null);
+
   // Bind the single composite into the (offscreen) source video.
   useEffect(() => {
     const v = videoRef.current;
@@ -77,6 +84,29 @@ export default function EyeCameraGrid({
       return;
     }
     if (!stream) v.srcObject = null;
+  }, [stream, replaySrc]);
+
+  // Pick up the source dimensions as soon as the browser knows them, and
+  // again on any subsequent metadata change (some streams renegotiate).
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const update = () => {
+      if (v.videoWidth > 0 && v.videoHeight > 0) {
+        setSrc((prev) =>
+          prev && prev.w === v.videoWidth && prev.h === v.videoHeight
+            ? prev
+            : { w: v.videoWidth, h: v.videoHeight }
+        );
+      }
+    };
+    update();
+    v.addEventListener("loadedmetadata", update);
+    v.addEventListener("resize", update);
+    return () => {
+      v.removeEventListener("loadedmetadata", update);
+      v.removeEventListener("resize", update);
+    };
   }, [stream, replaySrc]);
 
   // One RAF loop draws every panel's crop from the same source video.
@@ -169,24 +199,34 @@ export default function EyeCameraGrid({
                   : "grid grid-cols-2 gap-2"
           }
         >
-          {crops.map((c, i) => (
-            <div
-              key={i}
-              className={`relative aspect-video overflow-hidden rounded border bg-black ${
-                blink ? "border-warn" : "border-line"
-              }`}
-            >
-              <canvas
-                ref={(el) => {
-                  canvasRefs.current[i] = el;
-                }}
-                className="absolute inset-0 h-full w-full"
-              />
-              <div className="absolute left-1 top-1 rounded bg-black/50 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-widest text-signal">
-                {c.label}
+          {crops.map((c, i) => {
+            // Cell aspect = crop's real aspect on the wire. Until the
+            // source's intrinsic dimensions are known, fall back to 16:9 so
+            // the panel doesn't visually pop on first frame.
+            const aspect =
+              src && c.fh > 0 && c.fw > 0
+                ? (c.fw * src.w) / (c.fh * src.h)
+                : 16 / 9;
+            return (
+              <div
+                key={i}
+                style={{ aspectRatio: aspect }}
+                className={`relative overflow-hidden rounded border bg-black ${
+                  blink ? "border-warn" : "border-line"
+                }`}
+              >
+                <canvas
+                  ref={(el) => {
+                    canvasRefs.current[i] = el;
+                  }}
+                  className="absolute inset-0 h-full w-full"
+                />
+                <div className="absolute left-1 top-1 rounded bg-black/50 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-widest text-signal">
+                  {c.label}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
