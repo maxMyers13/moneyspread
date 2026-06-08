@@ -241,8 +241,17 @@ export default function Page() {
     };
   }, [connect]);
 
-  const calibrate = useCallback(() => {
-    void adapterRef.current?.calibrate?.();
+  const calibrate = useCallback(async (): Promise<boolean> => {
+    const fn = adapterRef.current?.calibrate;
+    if (!fn) {
+      logger.warn(
+        "session",
+        "calibrate: adapter has no calibrate() (mock or stub adapter)"
+      );
+      return false;
+    }
+    const ok = await fn.call(adapterRef.current!);
+    return ok;
   }, []);
 
   // Click "record": flip both the device recording (via sidecar) and the

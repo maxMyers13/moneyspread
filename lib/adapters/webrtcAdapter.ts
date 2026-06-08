@@ -391,6 +391,62 @@ export class WebRtcTobiiAdapter implements TobiiAdapter {
   }
 
   // -------------------------------------------------------------------------
+  // Calibration
+  // -------------------------------------------------------------------------
+  //
+  // Per docs §4.3, runs over the same g3api WebSocket as everything else:
+  //   calibrate!calibrate(true)   → with target (the printed marker card)
+  //   calibrate!calibrate(false)  → without target
+  // The action's result is documented as a detailed object on newer FW
+  // (and bare boolean on older FW via the legacy calibrate!run alias).
+  // We accept both shapes — if a `success: true` / `type: "success"` field
+  // is present, we trust that; otherwise we fall back to whether the
+  // result is truthy.
+
+  async calibrate(): Promise<boolean> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      logger.warn("calibrate", "no g3api ws — connect first");
+      return false;
+    }
+    logger.info("calibrate", "starting calibrate!calibrate(true)");
+    const t0 = performance.now();
+    try {
+      const result = await this.wsRequest<unknown>({
+        path: "calibrate!calibrate",
+        id: ++this.wsReqId,
+        method: "POST",
+        body: [true],
+      });
+      const ms = Math.round(performance.now() - t0);
+
+      let ok = false;
+      if (typeof result === "boolean") {
+        ok = result;
+      } else if (result && typeof result === "object") {
+        const r = result as { success?: boolean; type?: string };
+        if (typeof r.success === "boolean") ok = r.success;
+        else if (typeof r.type === "string") ok = /success|ok/i.test(r.type);
+        else ok = !!result;
+      }
+
+      if (ok) {
+        logger.info("calibrate", `succeeded in ${ms}ms`, { result });
+      } else {
+        logger.error(
+          "calibrate",
+          `failed (or device returned an unexpected shape) in ${ms}ms`,
+          { result }
+        );
+      }
+      return ok;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      logger.error("calibrate", `errored: ${msg}`);
+      return false;
+    }
+  }
+
+  // -------------------------------------------------------------------------
   // Track routing — scene vs eye
   // -------------------------------------------------------------------------
   //

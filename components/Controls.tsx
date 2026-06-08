@@ -261,7 +261,7 @@ export default function Controls({
   adapterKind: AdapterKind;
   onConnect: () => void;
   onDisconnect: () => void;
-  onCalibrate: () => void;
+  onCalibrate: () => Promise<boolean> | boolean | void;
   onToggleRecord: () => void;
   onPickAdapter: (k: AdapterKind) => void;
   autoReconnect: boolean;
@@ -274,7 +274,9 @@ export default function Controls({
 }) {
   const cfg = useStore((s) => s.settings);
   const setSetting = useStore((s) => s.setSetting);
-  const [calibrating, setCalibrating] = useState(false);
+  const [calibrationState, setCalibrationState] = useState<
+    "idle" | "working" | "ok" | "fail"
+  >("idle");
   const [probing, setProbing] = useState(false);
   const [probe, setProbe] = useState<ProbeResult | null>(null);
 
@@ -388,14 +390,37 @@ export default function Controls({
           </Btn>
         )}
         <Btn
-          disabled={!connected || calibrating || disabledForReplay}
+          disabled={
+            !connected || calibrationState === "working" || disabledForReplay
+          }
+          tone={
+            calibrationState === "ok"
+              ? "primary"
+              : calibrationState === "fail"
+                ? "alert"
+                : "default"
+          }
           onClick={async () => {
-            setCalibrating(true);
-            await Promise.resolve(onCalibrate());
-            setTimeout(() => setCalibrating(false), 700);
+            setCalibrationState("working");
+            try {
+              const result = await Promise.resolve(onCalibrate());
+              // Treat void as success — only false / thrown means fail.
+              setCalibrationState(result === false ? "fail" : "ok");
+            } catch {
+              setCalibrationState("fail");
+            }
+            // Auto-clear the result badge after a few seconds so the
+            // button isn't stuck advertising a stale outcome.
+            setTimeout(() => setCalibrationState("idle"), 3000);
           }}
         >
-          {calibrating ? "..." : "calibrate"}
+          {calibrationState === "working"
+            ? "..."
+            : calibrationState === "ok"
+              ? "✓ calibrated"
+              : calibrationState === "fail"
+                ? "✗ failed"
+                : "calibrate"}
         </Btn>
         <Btn
           tone={recording ? "alert" : "default"}
