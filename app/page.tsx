@@ -11,12 +11,18 @@ import { G3_BASE, G3_DIRECT, G3_WS, START_ADAPTER } from "@/lib/config";
 import { MockTobiiAdapter } from "@/lib/adapters/mockAdapter";
 import { WebRtcTobiiAdapter } from "@/lib/adapters/webrtcAdapter";
 import type { AdapterKind, TobiiAdapter, Unsubscribe } from "@/lib/adapters/types";
+import RecordingsList from "@/components/RecordingsList";
 import { installConsoleTap, logger } from "@/lib/logger";
 import {
   getStoredExposureStatus,
   requestLocalIpExposure,
   type LocalIpExposureStatus,
 } from "@/lib/exposeLocalIp";
+import {
+  SidecarError,
+  startRecording as sidecarStart,
+  stopRecording as sidecarStop,
+} from "@/lib/sidecarApi";
 
 const STATUS_COLOR: Record<string, string> = {
   connected: "bg-signal",
@@ -44,6 +50,12 @@ export default function Page() {
   useEffect(() => {
     setIpExposure(getStoredExposureStatus());
   }, []);
+
+  // Device recording state (sidecar). Distinct from store.recording, which is
+  // the *local* CSV capture flag — the two now move together when both succeed,
+  // but if the sidecar is offline we still want local capture to work.
+  const [deviceRecordingUuid, setDeviceRecordingUuid] = useState<string | null>(null);
+  const [recordingsRefresh, setRecordingsRefresh] = useState(0);
 
   // One-time session-start banner so the first log dump is self-contained.
   // useRef guard avoids the React 18 Strict Mode dev-only double-fire.
@@ -190,9 +202,55 @@ export default function Page() {
     void adapterRef.current?.calibrate?.();
   }, []);
 
-  const toggleRecord = useCallback(() => {
-    setRecording(!useStore.getState().recording);
-  }, [setRecording]);
+  // Click "record": flip both the device recording (via sidecar) and the
+  // local CSV capture. Sidecar failures don't block local capture — we want
+  // gaze exports to still work even without the sidecar running.
+  const toggleRecord = useCallback(async () => {
+    const local = useStore.getState().recording;
+    const onDevice = deviceRecordingUuid !== null;
+
+    // Starting (neither active): try sidecar first, always set local.
+    if (!local && !onDevice) {
+      try {
+        const r = await sidecarStart();
+        setDeviceRecordingUuid(r.uuid);
+        logger.info("session", `device recording started: ${r.uuid}`);
+      } catch (e) {
+        const msg =
+          e instanceof SidecarError
+            ? `sidecar: ${e.message}`
+            : e instanceof Error
+            ? e.message
+            : String(e);
+        logger.warn(
+          "session",
+          `device recording NOT started (local CSV still on): ${msg}`
+        );
+      }
+      setRecording(true);
+      return;
+    }
+
+    // Stopping: send !stop if we know a uuid; always clear local + refresh list.
+    if (onDevice) {
+      const uuid = deviceRecordingUuid;
+      try {
+        await sidecarStop(uuid!);
+        logger.info("session", `device recording stopped: ${uuid}`);
+      } catch (e) {
+        const msg =
+          e instanceof SidecarError
+            ? `sidecar: ${e.message}`
+            : e instanceof Error
+            ? e.message
+            : String(e);
+        logger.warn("session", `recorder!stop failed (continuing): ${msg}`);
+      }
+      setDeviceRecordingUuid(null);
+      setRecordingsRefresh((n) => n + 1);
+    }
+    setRecording(false);
+  }, [deviceRecordingUuid, setRecording]);
 
   const onRequestIpExposure = useCallback(async () => {
     const result = await requestLocalIpExposure();
@@ -255,6 +313,10 @@ export default function Page() {
             onRequestIpExposure={onRequestIpExposure}
           />
           <HudPanel />
+          <RecordingsList
+            recordingUuid={deviceRecordingUuid}
+            refreshKey={recordingsRefresh}
+          />
         </aside>
       </div>
 
