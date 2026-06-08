@@ -10,19 +10,21 @@ import {
 } from "@/lib/sidecarApi";
 
 interface Props {
-  /** uuid that's currently being device-recorded, if any. Highlighted in the
-   * list while in flight. Provided by the parent because the record state
-   * lives at the app level. */
+  /** uuid currently being device-recorded, if any. Shown as `● recording`. */
   recordingUuid: string | null;
-  /** Optional: parent gets notified when the user clicks a recording (Phase B3
-   * will wire this to replay mode). For now, null = no handler. */
+  /** uuid currently loaded in replay mode, if any. Shown highlighted as the
+   * active replay so the user knows what they're watching. */
+  activeReplayUuid?: string | null;
+  /** Click handler; parent typically enters replay mode with the selected
+   * recording. Unset means rows aren't clickable. */
   onSelectRecording?: (rec: RecordingSummary) => void;
-  /** Bump to force a refresh from the parent (e.g., right after stop). */
+  /** Bump to force a refresh (e.g., right after stop). */
   refreshKey?: number;
 }
 
 export default function RecordingsList({
   recordingUuid,
+  activeReplayUuid = null,
   onSelectRecording,
   refreshKey = 0,
 }: Props) {
@@ -123,14 +125,17 @@ export default function RecordingsList({
       ) : (
         <ul className="space-y-1">
           {recordings.map((r) => {
-            const isActive = r.uuid === recordingUuid;
-            const clickable = !!onSelectRecording;
+            const isRecording = r.uuid === recordingUuid;
+            const isReplaying = r.uuid === activeReplayUuid;
+            const clickable = !!onSelectRecording && !isRecording;
             return (
               <li
                 key={r.uuid}
                 className={`rounded border px-2 py-1.5 font-mono text-[10px] transition ${
-                  isActive
+                  isRecording
                     ? "border-alert bg-alert/10 text-alert"
+                    : isReplaying
+                    ? "border-signal bg-signal/10 text-signal cursor-pointer"
                     : clickable
                     ? "border-line text-text hover:border-signal hover:text-signal cursor-pointer"
                     : "border-line text-text"
@@ -149,9 +154,14 @@ export default function RecordingsList({
                     {r.gaze_valid_samples}/{r.gaze_samples} gaze
                   </span>
                 </div>
-                {isActive && (
+                {isRecording && (
                   <div className="text-[10px] uppercase tracking-widest">
                     ● recording
+                  </div>
+                )}
+                {isReplaying && !isRecording && (
+                  <div className="text-[10px] uppercase tracking-widest">
+                    ▶ replaying
                   </div>
                 )}
               </li>

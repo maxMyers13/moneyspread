@@ -254,6 +254,7 @@ export default function Controls({
   onToggleAutoReconnect,
   ipExposureStatus,
   onRequestIpExposure,
+  disabledForReplay = false,
 }: {
   connected: boolean;
   recording: boolean;
@@ -267,6 +268,9 @@ export default function Controls({
   onToggleAutoReconnect: (v: boolean) => void;
   ipExposureStatus: LocalIpExposureStatus;
   onRequestIpExposure: () => void;
+  /** When true, all live-source controls are disabled — page is in replay
+   * mode and shouldn't be juggling a live connection alongside. */
+  disabledForReplay?: boolean;
 }) {
   const cfg = useStore((s) => s.settings);
   const setSetting = useStore((s) => s.setSetting);
@@ -369,14 +373,16 @@ export default function Controls({
       {/* Connection + session */}
       <div className="flex flex-wrap gap-2">
         {!connected ? (
-          <Btn tone="primary" onClick={onConnect}>
+          <Btn tone="primary" onClick={onConnect} disabled={disabledForReplay}>
             connect
           </Btn>
         ) : (
-          <Btn onClick={onDisconnect}>disconnect</Btn>
+          <Btn onClick={onDisconnect} disabled={disabledForReplay}>
+            disconnect
+          </Btn>
         )}
         <Btn
-          disabled={!connected || calibrating}
+          disabled={!connected || calibrating || disabledForReplay}
           onClick={async () => {
             setCalibrating(true);
             await Promise.resolve(onCalibrate());
@@ -387,7 +393,7 @@ export default function Controls({
         </Btn>
         <Btn
           tone={recording ? "alert" : "default"}
-          disabled={!connected}
+          disabled={!connected || disabledForReplay}
           onClick={onToggleRecord}
         >
           {recording ? "■ stop" : "● record"}

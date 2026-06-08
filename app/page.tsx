@@ -22,7 +22,10 @@ import {
   SidecarError,
   startRecording as sidecarStart,
   stopRecording as sidecarStop,
+  type RecordingSummary,
 } from "@/lib/sidecarApi";
+import { useReplayGaze } from "@/lib/useReplayGaze";
+import type { SceneViewerHandle } from "@/components/SceneViewer";
 
 const STATUS_COLOR: Record<string, string> = {
   connected: "bg-signal",
@@ -56,6 +59,14 @@ export default function Page() {
   // but if the sidecar is offline we still want local capture to work.
   const [deviceRecordingUuid, setDeviceRecordingUuid] = useState<string | null>(null);
   const [recordingsRefresh, setRecordingsRefresh] = useState(0);
+
+  // Replay mode. When `replayRecording` is non-null, the scene viewer points
+  // at a recorded scenevideo.mp4 instead of a live MediaStream, and the
+  // useReplayGaze hook drives the store's ingest off video currentTime.
+  const [replayRecording, setReplayRecording] = useState<RecordingSummary | null>(null);
+  const mode: "live" | "replay" = replayRecording ? "replay" : "live";
+  const sceneViewerRef = useRef<SceneViewerHandle | null>(null);
+  const sceneVideoRef = useRef<HTMLVideoElement | null>(null);
 
   // One-time session-start banner so the first log dump is self-contained.
   // useRef guard avoids the React 18 Strict Mode dev-only double-fire.
@@ -262,7 +273,45 @@ export default function Page() {
     [disconnect]
   );
 
+  // Entering replay tears down any live connection — we don't need both, and
+  // the WebRTC keep-alive would keep firing if we didn't.
+  const enterReplay = useCallback(
+    (rec: RecordingSummary) => {
+      if (adapterRef.current) void disconnect({ userInitiated: true });
+      clearBuffers();
+      setReplayRecording(rec);
+      logger.info("session", `entered replay: ${rec.uuid} (${rec.name})`);
+    },
+    [disconnect, clearBuffers]
+  );
+
+  const exitReplay = useCallback(() => {
+    if (replayRecording) {
+      logger.info("session", `exited replay: ${replayRecording.uuid}`);
+    }
+    setReplayRecording(null);
+    clearBuffers();
+  }, [replayRecording, clearBuffers]);
+
+  // Capture the <video> element ref from SceneViewer so the gaze hook can
+  // observe its currentTime.
+  const setSceneViewerRef = useCallback((h: SceneViewerHandle | null) => {
+    sceneViewerRef.current = h;
+    sceneVideoRef.current = h?.video ?? null;
+  }, []);
+
+  const replaySceneSrc =
+    replayRecording &&
+    `${G3_BASE}/recordings/${encodeURIComponent(replayRecording.uuid)}/scenevideo.mp4`;
+  const replayEyeSrc =
+    replayRecording && replayRecording.has_eye_video
+      ? `${G3_BASE}/recordings/${encodeURIComponent(replayRecording.uuid)}/eyecameras.mp4`
+      : null;
+
+  useReplayGaze(replayRecording?.uuid ?? null, sceneVideoRef);
+
   const connected = state === "connected" || state === "connecting";
+  const inReplay = mode === "replay";
 
   return (
     <main className="mx-auto max-w-[1400px] px-4 py-5">
@@ -287,12 +336,35 @@ export default function Page() {
         </div>
       </header>
 
+      {/* Mode banner — shown only in replay so it's obvious you're not live */}
+      {inReplay && replayRecording && (
+        <div className="mb-3 flex items-center justify-between rounded border border-warn/60 bg-warn/10 px-3 py-2 font-mono text-[11px]">
+          <span className="text-warn">
+            REPLAY · {replayRecording.name} · {replayRecording.duration_s.toFixed(1)}s ·{" "}
+            {replayRecording.uuid.slice(0, 8)}…
+          </span>
+          <button
+            onClick={exitReplay}
+            className="rounded border border-warn px-2 py-0.5 text-warn hover:bg-warn/20"
+          >
+            exit replay
+          </button>
+        </div>
+      )}
+
       {/* Body: main + sidebar */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_340px]">
         <div className="space-y-4">
-          <SceneViewer stream={scene} />
+          <SceneViewer
+            ref={setSceneViewerRef}
+            stream={inReplay ? null : scene}
+            replaySrc={replaySceneSrc}
+          />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <EyeCameraInset stream={eye} />
+            <EyeCameraInset
+              stream={inReplay ? null : eye}
+              replaySrc={replayEyeSrc}
+            />
             <PupilTrend />
           </div>
         </div>
@@ -311,11 +383,14 @@ export default function Page() {
             onToggleAutoReconnect={setAutoReconnect}
             ipExposureStatus={ipExposure}
             onRequestIpExposure={onRequestIpExposure}
+            disabledForReplay={inReplay}
           />
           <HudPanel />
           <RecordingsList
             recordingUuid={deviceRecordingUuid}
             refreshKey={recordingsRefresh}
+            onSelectRecording={enterReplay}
+            activeReplayUuid={replayRecording?.uuid ?? null}
           />
         </aside>
       </div>
