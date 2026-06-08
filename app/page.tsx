@@ -393,17 +393,15 @@ export default function Page() {
             stream={inReplay ? null : scene}
             replaySrc={replaySceneSrc}
           />
-          {/* HudPanel (the TELEMETRY card with the PUPIL mm readouts) and
-              PupilTrend (the rolling chart) both sit directly above the
-              EyeCameraGrid so a screen recording cropped to the main
-              column captures all the pupil metrics + eye angles in one
-              shot. */}
-          <HudPanel />
+          {/* Main-column layout for the demo screen recording:
+              eye cameras + pupil chart visible side-by-side in space,
+              then the wide TELEMETRY card with all pupil numbers below. */}
           <PupilTrend />
           <EyeCameraGrid
             stream={inReplay ? null : eye}
             replaySrc={replayEyeSrc}
           />
+          <HudPanel />
           <Timeline />
         </div>
 
