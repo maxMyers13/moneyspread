@@ -296,9 +296,15 @@ export default function Controls({
     if (kind === "csv") {
       download(`okn-session-${ts}.csv`, recordedToCsv(rows), "text/csv");
     } else {
+      // JSON bundles the per-sample rows with the manual event markers so a
+      // single file is a complete session record (FR-11 + FR-12).
       download(
         `okn-session-${ts}.json`,
-        JSON.stringify(rows, null, 2),
+        JSON.stringify(
+          { events: useStore.getState().events, samples: rows },
+          null,
+          2
+        ),
         "application/json"
       );
     }

@@ -4,14 +4,24 @@ Companion HTTP service for the [OKN viewer](..). The browser already does the
 live view directly over WebRTC; this exists for the three things WebRTC can't
 do well on Tobii Pro Glasses 3:
 
-- **Recording** — RTSP via `g3pylib` while the browser keeps streaming over
-  WebRTC. Recordings live on this Mac, not the device's SD card.
-- **Scrubbable replay** — RTSP can rewind, WebRTC can't.
-- **Annotated export** — `ffmpeg` pipeline that burns the gaze marker / line
-  / trail straight into the output video.
+- **Recording** — orchestrates the device's own `recorder!start` / `!stop`
+  over the g3api WebSocket. Recordings land on the device's SD card with
+  perfect in-device gaze/video sync; the browser plays them back directly
+  through the Next.js `/g3` proxy (the device serves HTTP Range natively).
+- **Scrubbable replay** — the recorded files seek; the live WebRTC stream
+  can't.
+- **Annotated export** — an `ffmpeg` + ASS-subtitle pipeline that burns the
+  gaze marker straight into the output video.
 
 Same local-first posture as the rest of the project: localhost only, no
 auth, no cloud.
+
+> **Why device recording instead of RTSP via `g3pylib`?** Authoring our own
+> `scene.mp4` + `gaze.jsonl` from RTSP gave ~10-100 ms gaze-to-video skew
+> (separate transports, separate clocks). Letting the device record to its
+> SD card gives perfect in-device sync, and `g3pylib`'s pinned `av==10.0.0`
+> won't build against ffmpeg 8 anyway. See the project README's "Recording /
+> replay / export pivot" section for the full rationale.
 
 ## Quickstart
 
@@ -30,27 +40,33 @@ curl -s http://127.0.0.1:8765/health | jq .
 
 ### Optional knobs
 
-| env var          | default     | what                                    |
-|------------------|-------------|-----------------------------------------|
-| `SIDECAR_HOST`   | `127.0.0.1` | bind address (don't expose publicly)    |
-| `SIDECAR_PORT`   | `8765`      | port                                     |
-| `SIDECAR_RELOAD` | unset       | set to `1` for uvicorn `--reload` in dev |
+| env var                  | default                      | what                                          |
+|--------------------------|------------------------------|-----------------------------------------------|
+| `SIDECAR_HOST`           | `127.0.0.1`                  | bind address (don't expose publicly)          |
+| `SIDECAR_PORT`           | `8765`                       | port                                          |
+| `SIDECAR_RELOAD`         | unset                        | set to `1` for uvicorn `--reload` in dev      |
+| `G3_HOST`                | `tg03b-080200012671.local`   | hostname/IP of the recording unit (no scheme) |
+| `SIDECAR_RECORDINGS_DIR` | `./recordings`               | where adjacent `sidecar.json` notes + export artifacts live |
+| `SIDECAR_HTTP_TIMEOUT_S` | `8.0`                        | per-request timeout when talking to the device |
 
-## API surface (current)
+## API surface
 
-`/health` works; everything else returns `501 Not Implemented` for now. The
-shapes are stable so the browser-side `SidecarAdapter` can be built against
-them in parallel.
+All endpoints are implemented. OpenAPI: <http://127.0.0.1:8765/docs>
 
-| method | path                          | status |
-|--------|-------------------------------|--------|
-| GET    | `/health`                     | ✅ ok |
-| GET    | `/recordings`                 | ✅ returns `[]` until wired |
-| POST   | `/record/start`               | 501 (next slice) |
-| POST   | `/record/{id}/stop`           | 501 (next slice) |
-| GET    | `/recordings/{id}`            | 501 (next slice) |
+| method | path                              | what                                                        |
+|--------|-----------------------------------|-------------------------------------------------------------|
+| GET    | `/health`                         | liveness + the configured `device_host`                     |
+| POST   | `/record/start`                   | `recorder!start`; returns the device-assigned `uuid`        |
+| POST   | `/record/{uuid}/stop`             | `recorder!stop`                                             |
+| GET    | `/recordings`                     | enumerate device recordings, hydrated with manifest + notes |
+| GET    | `/recordings/{uuid}`              | one recording's joined manifest + local `sidecar.json`      |
+| POST   | `/recordings/{uuid}/export`       | kick off an annotated-MP4 export; returns a `job_id`        |
+| GET    | `/jobs/{job_id}`                  | export job status + progress                                |
+| GET    | `/jobs/by-recording/{uuid}`       | latest export job for a recording (survives browser reload) |
+| GET    | `/recordings/{uuid}/export.mp4`   | stream the cached annotated MP4 (Range-capable)             |
 
-OpenAPI: <http://127.0.0.1:8765/docs>
+Media itself is **not** proxied here — the browser plays recordings straight
+from the device through the viewer's `/g3` reverse-proxy.
 
 ## Why a sidecar at all
 
@@ -60,17 +76,29 @@ Quoting the project README's v1.1 plan:
 > is the only reason the sidecar exists.
 
 Browser ffmpeg.wasm exists but is slow, memory-hungry, and a poor fit for
-half-hour OKN sessions. A native Python service that holds RTSP open, writes
-to disk, and shells out to system `ffmpeg` is dramatically simpler.
+half-hour OKN sessions. A native Python service that pulls the finished
+recording off the device and shells out to system `ffmpeg` is dramatically
+simpler.
 
-## What's next
+## How export works
 
-- Wire `g3pylib` and implement `/record/start` against the live RTSP stream.
-- Define the on-disk storage layout (one folder per recording — `scene.mp4`,
-  `eye.mp4`, `gaze.jsonl`, `meta.json`).
-- Implement `/recordings/{id}/scrub?t=…` for browser-driven replay.
-- Implement `/recordings/{id}/export` to produce burned-in annotated video.
+`POST /recordings/{uuid}/export` runs a background asyncio task
+(`export/pipeline.py`) that:
 
-Python 3.14 isn't supported yet by every dependency we'll pull in (g3pylib in
-particular). The project is pinned to 3.12 via `.python-version` — `uv sync`
-will fetch and use 3.12 even if your default `python3` is newer.
+1. Fetches `recording.g3` to read the manifest (video/gaze filenames,
+   resolution, duration).
+2. Pulls `scene.mp4` and `gazedata.gz` into
+   `recordings/<uuid>/export/` (cached — re-export is cheap).
+3. Decodes the gaze JSONL into an ASS subtitle overlay (`export/ass_overlay.py`).
+4. Shells out to `ffmpeg -vf subtitles=overlay.ass …`, parsing
+   `-progress pipe:1` to update the job's `progress` field.
+
+The result lands at `recordings/<uuid>/export/annotated.mp4`, served back
+through `/recordings/{uuid}/export.mp4`. Needs a system `ffmpeg` on `PATH`.
+
+## Python version
+
+Pinned to 3.12 via `.python-version` — `uv sync` fetches and uses 3.12 even
+if your default `python3` is newer (3.14 isn't supported by every dependency
+yet). `g3pylib` is intentionally **not** a dependency; the ~250-line g3api
+client in `device/client.py` covers the small slice of the protocol we use.

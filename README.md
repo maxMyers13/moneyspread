@@ -503,7 +503,7 @@ Tobii's official Python SDK pins `av==10.0.0` (PyAV), which won't build against 
 
 ### Roadmap
 - **v1 (done):** live scene + gaze marker, eye-camera inset, pupil HUD, blink/direction/pursuit/saccade heuristics, CSV/JSON export.
-- **v1.1 (done):** Python sidecar - device-driven recording, scrubbable replay, annotated video export.
+- **v1.1 (done):** Python sidecar - device-driven recording, scrubbable replay, annotated video export, event markers (stimulus/direction/trial/notes) with review timeline.
 - **v2:** OKN metrics - saccade frequency, pursuit direction consistency, below-line duration, trial summaries. After protocol validation.
 
 ---
