@@ -339,7 +339,7 @@ You should see the OKN Viewer interface.
 In the right-hand panel, under **CONTROLS**, the `WEBRTC` source should already be highlighted. Click **CONNECT**. Within ~5 seconds you should see:
 
 - the scene camera (what the wearer is seeing) in the big top panel
-- the eye camera (small, black-and-white - that's normal, it's an infrared sensor) bottom-left
+- the eye cameras (black-and-white - that's normal, they're infrared sensors) as a 4-panel grid below the scene, one panel per eye angle
 - a small dot moving over the scene video, tracking the wearer's gaze
 
 If something goes wrong, click **PROBE GLASSES** first - it'll tell you whether your computer can reach the glasses at all and explain why if not.
@@ -506,7 +506,7 @@ Tobii's official Python SDK pins `av==10.0.0` (PyAV), which won't build against 
 - **Eye-camera video** isn't captured to the SD card by default (manifest reports `eyecameras: null`). The live eye-camera view still works.
 
 ### Roadmap
-- **v1 (done):** live scene + gaze marker, eye-camera inset, pupil HUD, blink/direction/pursuit/saccade heuristics, CSV/JSON export.
+- **v1 (done):** live scene + gaze marker, eye-camera view, pupil HUD, blink/direction/pursuit/saccade heuristics, CSV/JSON export.
 - **v1.1 (done):** Python sidecar - device-driven recording, scrubbable replay, annotated video export, event markers (stimulus/direction/trial/notes) with review timeline.
 - **v2:** OKN metrics - saccade frequency, pursuit direction consistency, below-line duration, trial summaries. After protocol validation.
 
