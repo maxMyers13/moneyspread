@@ -1,0 +1,36 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --ink: #07090a;
+  --panel: #0d1210;
+  --line: #1d2823;
+  --text: #c9d6cd;
+  --muted: #5a6b60;
+  --signal: #5ff29a;
+  --warn: #ffd166;
+  --alert: #ff5d6c;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background-color: var(--ink);
+  color: var(--text);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  /* faint instrument grid */
+  background-image:
+    linear-gradient(rgba(95, 242, 154, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(95, 242, 154, 0.025) 1px, transparent 1px);
+  background-size: 32px 32px;
+  background-position: center;
+}
+
+/* range inputs a touch tighter */
+input[type="range"] {
+  height: 4px;
+}
