@@ -17,6 +17,7 @@ http://localhost:8765, and we don't ship behind a reverse proxy.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -27,10 +28,13 @@ from typing import Literal
 import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from . import __version__
 from .device import G3ApiClient, G3ApiError
+from .export import JobRegistry, run_export
+from .export.jobs import get_registry
 from .storage import DeviceRecordingManifest, RecordingSummary, SidecarRecord
 
 logger = logging.getLogger("tobii_okn_sidecar")
@@ -121,6 +125,23 @@ class StartResponse(BaseModel):
 class StopResponse(BaseModel):
     uuid: str
     stopped_at: str
+
+
+class ExportStartResponse(BaseModel):
+    job_id: str
+    recording_uuid: str
+
+
+class JobStatusResponse(BaseModel):
+    id: str
+    recording_uuid: str
+    status: Literal["pending", "running", "done", "failed"]
+    progress: float
+    error: str | None = None
+    started_at: str
+    completed_at: str | None = None
+    download_url: str | None = None
+    """Set on `done` — relative URL the browser can hit to fetch the .mp4."""
 
 
 # ---------------------------------------------------------------------------
@@ -265,3 +286,89 @@ async def get_recording(uuid: str) -> RecordingSummary:
             ) from e
     sidecar = SidecarRecord.load_or_default(_recordings_root() / uuid)
     return RecordingSummary.from_manifest(manifest, sidecar)
+
+
+# ---------------------------------------------------------------------------
+# Export — annotated MP4 via ffmpeg + ASS subtitle overlay
+# ---------------------------------------------------------------------------
+
+
+def _jobs() -> JobRegistry:
+    return get_registry()
+
+
+def _job_to_response(job_id: str) -> JobStatusResponse:
+    j = _jobs().get(job_id)
+    if j is None:
+        raise HTTPException(status_code=404, detail=f"job {job_id} not found")
+    download_url = (
+        f"/recordings/{j.recording_uuid}/export.mp4" if j.status == "done" else None
+    )
+    return JobStatusResponse(
+        id=j.id,
+        recording_uuid=j.recording_uuid,
+        status=j.status,
+        progress=j.progress,
+        error=j.error,
+        started_at=j.started_at,
+        completed_at=j.completed_at,
+        download_url=download_url,
+    )
+
+
+@app.post("/recordings/{uuid}/export", response_model=ExportStartResponse)
+async def start_export(uuid: str) -> ExportStartResponse:
+    """Kick off an annotated-MP4 export for the given recording. Returns
+    immediately with a job_id; client polls /jobs/{job_id} for progress.
+
+    Multiple invocations on the same uuid create distinct jobs — the
+    caller can use /jobs/by-recording/{uuid} to find the latest if they
+    lost the id (e.g. across a browser reload)."""
+    job = await _jobs().create(uuid)
+    job.task = asyncio.create_task(
+        run_export(
+            job_id=job.id,
+            recording_uuid=uuid,
+            device_host=_device_host(),
+            recordings_root=_recordings_root(),
+            registry=_jobs(),
+            http_timeout_s=_http_timeout_s(),
+        ),
+        name=f"export-{job.id}",
+    )
+    logger.info("export queued: job=%s recording=%s", job.id, uuid)
+    return ExportStartResponse(job_id=job.id, recording_uuid=uuid)
+
+
+@app.get("/jobs/{job_id}", response_model=JobStatusResponse)
+async def get_job(job_id: str) -> JobStatusResponse:
+    return _job_to_response(job_id)
+
+
+@app.get("/jobs/by-recording/{uuid}", response_model=JobStatusResponse | None)
+async def get_job_by_recording(uuid: str) -> JobStatusResponse | None:
+    """Find the latest export job for a recording. Useful for surviving
+    browser reloads — the client can reconnect to an in-flight job
+    without having tracked its id."""
+    j = _jobs().latest_for_recording(uuid)
+    if j is None:
+        return None
+    return _job_to_response(j.id)
+
+
+@app.get("/recordings/{uuid}/export.mp4")
+async def download_export(uuid: str) -> FileResponse:
+    """Stream the cached annotated.mp4. Supports HTTP Range natively via
+    FastAPI's FileResponse, so the browser <video> can seek if you point
+    it at this URL."""
+    path = _recordings_root() / uuid / "export" / "annotated.mp4"
+    if not path.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail="annotated export not built yet — POST /recordings/<uuid>/export first",
+        )
+    return FileResponse(
+        path,
+        media_type="video/mp4",
+        filename=f"{uuid}-annotated.mp4",
+    )

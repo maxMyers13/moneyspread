@@ -37,6 +37,24 @@ export interface StopResponse {
   stopped_at: string;
 }
 
+export type JobStatus = "pending" | "running" | "done" | "failed";
+
+export interface ExportStartResponse {
+  job_id: string;
+  recording_uuid: string;
+}
+
+export interface JobStatusResponse {
+  id: string;
+  recording_uuid: string;
+  status: JobStatus;
+  progress: number;
+  error: string | null;
+  started_at: string;
+  completed_at: string | null;
+  download_url: string | null;
+}
+
 export class SidecarError extends Error {
   constructor(
     message: string,
@@ -132,6 +150,37 @@ export function stopRecording(uuid: string): Promise<StopResponse> {
     { method: "POST" },
     { tag: `stopRecording(${uuid.slice(0, 8)})` }
   );
+}
+
+export function startExport(uuid: string): Promise<ExportStartResponse> {
+  return call<ExportStartResponse>(
+    `/recordings/${encodeURIComponent(uuid)}/export`,
+    { method: "POST" },
+    { tag: `startExport(${uuid.slice(0, 8)})` }
+  );
+}
+
+export function getJob(jobId: string): Promise<JobStatusResponse> {
+  return call<JobStatusResponse>(
+    `/jobs/${encodeURIComponent(jobId)}`,
+    { method: "GET" },
+    { tag: `getJob(${jobId})` }
+  );
+}
+
+export function getLatestJobForRecording(
+  uuid: string
+): Promise<JobStatusResponse | null> {
+  return call<JobStatusResponse | null>(
+    `/jobs/by-recording/${encodeURIComponent(uuid)}`,
+    { method: "GET" },
+    { tag: `getLatestJob(${uuid.slice(0, 8)})` }
+  );
+}
+
+/** Absolute URL the browser can hit to download a finished export. */
+export function exportDownloadUrl(uuid: string): string {
+  return `${SIDECAR_BASE}/recordings/${encodeURIComponent(uuid)}/export.mp4`;
 }
 
 export const SIDECAR_BASE_URL = SIDECAR_BASE;

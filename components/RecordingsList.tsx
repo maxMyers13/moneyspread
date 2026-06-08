@@ -8,6 +8,7 @@ import {
   type RecordingSummary,
   type SidecarHealth,
 } from "@/lib/sidecarApi";
+import ExportButton from "./ExportButton";
 
 interface Props {
   /** uuid currently being device-recorded, if any. Shown as `● recording`. */
@@ -162,6 +163,13 @@ export default function RecordingsList({
                 {isReplaying && !isRecording && (
                   <div className="text-[10px] uppercase tracking-widest">
                     ▶ replaying
+                  </div>
+                )}
+                {/* Export controls — disabled for the in-flight recording so we
+                    don't try to pull files mid-write. */}
+                {!isRecording && (
+                  <div className="mt-1">
+                    <ExportButton recordingUuid={r.uuid} />
                   </div>
                 )}
               </li>
