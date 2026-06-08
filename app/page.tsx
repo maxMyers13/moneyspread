@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import SceneViewer from "@/components/SceneViewer";
-import EyeCameraInset from "@/components/EyeCameraInset";
+import EyeCameraGrid from "@/components/EyeCameraGrid";
 import HudPanel from "@/components/HudPanel";
 import PupilTrend from "@/components/PupilTrend";
 import Controls from "@/components/Controls";
@@ -362,13 +362,11 @@ export default function Page() {
             stream={inReplay ? null : scene}
             replaySrc={replaySceneSrc}
           />
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <EyeCameraInset
-              stream={inReplay ? null : eye}
-              replaySrc={replayEyeSrc}
-            />
-            <PupilTrend />
-          </div>
+          <EyeCameraGrid
+            stream={inReplay ? null : eye}
+            replaySrc={replayEyeSrc}
+          />
+          <PupilTrend />
           <Timeline />
         </div>
 

@@ -355,15 +355,17 @@ If something goes wrong, click **PROBE GLASSES** first - it'll tell you whether 
 
 ## Part 4 - Using the viewer
 
-The interface has four parts:
+The interface, top to bottom, is:
 
 ### Scene panel (top, large)
 What the wearer sees, plus the gaze dot on top, plus the optional horizontal reference line. You can drag the line up and down - when the wearer's gaze crosses below it, the "BELOW LINE" telemetry flips to `yes`.
 
-### Eye camera (bottom-left)
-The wearer's eyes, captured by an infrared sensor in the glasses. Black-and-white is normal. Useful for confirming the glasses aren't slipping or that the wearer is blinking when the gaze data goes weird.
+### Eye cameras (4-panel grid, under the scene)
+The glasses carry four infrared eye sensors - two angles per eye. They arrive over the network as a *single* composite video, which the viewer splits into four panels so each angle gets its own view. Black-and-white is normal. Useful for confirming the glasses aren't slipping or that the wearer is blinking when the gaze data goes weird.
 
-### Pupil trend chart (bottom-right)
+The composite's exact tiling isn't documented by Tobii, so the **EYE LAYOUT** control (in the sidebar) lets you pick the split that lines up with the live feed: `2x2` (default), `row` (1x4), `col` (4x1), or `full` (the whole composite in one panel). Pick whichever makes the four eye views land in their own panels.
+
+### Pupil trend chart
 A rolling chart of pupil size over the last few seconds, compared to a baseline. Big spikes can indicate cognitive load or surprise.
 
 ### Controls + telemetry (right sidebar)
@@ -456,9 +458,11 @@ lib/useReplayGaze.ts          drives the store from a recording's gazedata.gz
 lib/sidecarApi.ts             TS client mirroring the sidecar's HTTP surface
 components/
   SceneViewer + GazeOverlay   <video> + canvas reticle/line/trail
-  EyeCameraInset              IR eye camera
+  EyeCameraGrid               splits the single eye composite into 4 angle panels
   HudPanel                    dense telemetry readout
   PupilTrend                  uPlot mean-vs-baseline chart
+  EventMarkers                drop/list stimulus/direction/trial/note markers (FR-12)
+  Timeline                    canvas review track: mode/below/blink/events + playhead
   Controls                    connect/calibrate/record/sliders/export buttons
   RecordingsList              device recordings sidebar + replay entrypoint
   ExportButton                per-recording export controls

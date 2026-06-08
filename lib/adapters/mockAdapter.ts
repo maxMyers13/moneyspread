@@ -43,6 +43,8 @@ export class MockTobiiAdapter implements TobiiAdapter {
 
   private sceneCanvas: HTMLCanvasElement | null = null;
   private sceneStream: MediaStream | null = null;
+  private eyeCanvas: HTMLCanvasElement | null = null;
+  private eyeStream: MediaStream | null = null;
 
   async connect(): Promise<void> {
     this.emitStatus({ state: "connecting", message: "mock: spinning up" });
@@ -59,6 +61,8 @@ export class MockTobiiAdapter implements TobiiAdapter {
     this.rafId = null;
     this.sceneStream?.getTracks().forEach((t) => t.stop());
     this.sceneStream = null;
+    this.eyeStream?.getTracks().forEach((t) => t.stop());
+    this.eyeStream = null;
     this.emitStatus({ state: "disconnected" });
   }
 
@@ -66,9 +70,10 @@ export class MockTobiiAdapter implements TobiiAdapter {
     return this.sceneStream;
   }
 
-  // Mock has no separate eye camera; return null so the inset shows a placeholder.
+  // Synthetic 2×2 eye composite (mirrors the real G3's single composite of 4
+  // eye sensors) so the eye-camera split is demoable without the glasses.
   getEyeStream(): MediaStream | null {
-    return null;
+    return this.eyeStream;
   }
 
   onGaze(cb: (s: GazeSample) => void): Unsubscribe {
@@ -175,11 +180,110 @@ export class MockTobiiAdapter implements TobiiAdapter {
         ctx.fillStyle = "#1c241e";
         ctx.fillRect(sx + stripeW, 0, stripeW, h);
       }
+      this.drawEye();
       this.rafId = requestAnimationFrame(draw);
     };
     draw();
 
     // 30 fps capture is plenty for a mock backdrop.
     this.sceneStream = canvas.captureStream(30);
+
+    // Synthetic eye composite: 2×2 grid of IR-style eye tiles, drawn each
+    // frame inside the same RAF as the scene.
+    const eye = document.createElement("canvas");
+    eye.width = 640;
+    eye.height = 480;
+    this.eyeCanvas = eye;
+    this.eyeStream = eye.captureStream(30);
+  }
+
+  // Current OKN x-phase, reused by the eye composite so the irises track the
+  // same sawtooth the gaze samples follow.
+  private currentGazeX(ms: number): number {
+    const cycle = PURSUIT_MS + SACCADE_MS;
+    const phase = ms % cycle;
+    if (phase < PURSUIT_MS) {
+      return X_MIN + (X_MAX - X_MIN) * (phase / PURSUIT_MS);
+    }
+    return X_MAX - (X_MAX - X_MIN) * ((phase - PURSUIT_MS) / SACCADE_MS);
+  }
+
+  private drawEye() {
+    const ctx = this.eyeCanvas?.getContext("2d");
+    if (!ctx || !this.eyeCanvas) return;
+    const ms = performance.now() - this.startMs;
+    const blinking = ms % BLINK_EVERY_MS < BLINK_MS;
+    const gx = this.currentGazeX(ms);
+    const tw = this.eyeCanvas.width / 2;
+    const th = this.eyeCanvas.height / 2;
+    // variant offsets the iris a touch so the two tiles per eye read as two
+    // distinct angles rather than identical copies.
+    this.drawEyeTile(ctx, 0, 0, tw, th, gx, blinking, 0);
+    this.drawEyeTile(ctx, tw, 0, tw, th, gx, blinking, 1);
+    this.drawEyeTile(ctx, 0, th, tw, th, gx, blinking, 0);
+    this.drawEyeTile(ctx, tw, th, tw, th, gx, blinking, 1);
+  }
+
+  private drawEyeTile(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    gx: number,
+    blinking: boolean,
+    variant: 0 | 1
+  ) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, y, w, h);
+    ctx.clip();
+    ctx.fillStyle = "#262626";
+    ctx.fillRect(x, y, w, h);
+
+    const cx = x + w / 2;
+    const cy = y + h / 2;
+    if (blinking) {
+      ctx.fillStyle = "#1a1a1a";
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = "#555";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(x + w * 0.18, cy);
+      ctx.lineTo(x + w * 0.82, cy);
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
+
+    // sclera
+    ctx.fillStyle = "#9c9c9c";
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, w * 0.34, h * 0.26, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    const irisX = cx + (gx - 0.5) * w * 0.3 + (variant ? 7 : -7);
+    ctx.fillStyle = "#3a3a3a";
+    ctx.beginPath();
+    ctx.arc(irisX, cy, h * 0.18, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#0e0e0e";
+    ctx.beginPath();
+    ctx.arc(irisX, cy, h * 0.09, 0, Math.PI * 2);
+    ctx.fill();
+
+    // IR glints
+    ctx.fillStyle = "#fff";
+    for (const [dx, dy] of [
+      [-6, -4],
+      [6, -4],
+      [-4, 6],
+      [5, 6],
+    ]) {
+      ctx.beginPath();
+      ctx.arc(irisX + dx, cy + dy, 1.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
   }
 }

@@ -55,7 +55,14 @@ export interface Settings {
   blinkMinMs: number;
   baselineWindowS: number;
   minCrossingMs: number;
+  eyeLayout: EyeLayout;
 }
+
+// The glasses deliver ONE eye-camera video that's a composite of the 4 IR eye
+// sensors (2 angles per eye). We crop that single frame into 4 panels; the tile
+// arrangement isn't documented, so the layout is user-selectable against the
+// live device. "full" keeps the whole composite in a single panel.
+export type EyeLayout = "2x2" | "row" | "col" | "full";
 
 export interface Derived {
   t: number;
@@ -144,6 +151,7 @@ const defaultSettings: Settings = {
   blinkMinMs: 80,
   baselineWindowS: 10,
   minCrossingMs: 150,
+  eyeLayout: "2x2",
 };
 
 const emptyDerived: Derived = {
