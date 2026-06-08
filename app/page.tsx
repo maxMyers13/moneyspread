@@ -393,9 +393,12 @@ export default function Page() {
             stream={inReplay ? null : scene}
             replaySrc={replaySceneSrc}
           />
-          {/* PupilTrend sits directly above EyeCameraGrid so a screen
-              recording cropped to the main column captures both pupil
-              metrics and the eye-camera angles in one shot. */}
+          {/* HudPanel (the TELEMETRY card with the PUPIL mm readouts) and
+              PupilTrend (the rolling chart) both sit directly above the
+              EyeCameraGrid so a screen recording cropped to the main
+              column captures all the pupil metrics + eye angles in one
+              shot. */}
+          <HudPanel />
           <PupilTrend />
           <EyeCameraGrid
             stream={inReplay ? null : eye}
@@ -420,7 +423,6 @@ export default function Page() {
             onRequestIpExposure={onRequestIpExposure}
             disabledForReplay={inReplay}
           />
-          <HudPanel />
           <EventMarkers />
           <RecordingsList
             recordingUuid={deviceRecordingUuid}
