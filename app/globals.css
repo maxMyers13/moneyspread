@@ -2,6 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
+/* :root holds the default (dark) palette. A `light` class on <html> swaps
+   the values to the light palette without touching component classnames —
+   every Tailwind token (`bg-panel`, `text-text`, etc.) is wired through
+   these vars in tailwind.config.ts. */
 :root {
   --ink: #07090a;
   --panel: #0d1210;
@@ -11,6 +15,22 @@
   --signal: #5ff29a;
   --warn: #ffd166;
   --alert: #ff5d6c;
+  --grid-line: rgba(95, 242, 154, 0.025);
+}
+
+html.light {
+  --ink: #f5f6f4;
+  --panel: #ffffff;
+  --line: #d8e0db;
+  --text: #1a2520;
+  --muted: #6b7a70;
+  /* Accent colors retoned for white backgrounds — neon greens read as
+     highlighter on white, which is illegible. Darker variants of the
+     same hues so signal / warn / alert still pop without burning eyes. */
+  --signal: #1f9d5c;
+  --warn: #b07900;
+  --alert: #c63d4d;
+  --grid-line: rgba(31, 157, 92, 0.05);
 }
 
 html,
@@ -24,8 +44,8 @@ body {
   font-family: var(--font-sans), system-ui, sans-serif;
   /* faint instrument grid */
   background-image:
-    linear-gradient(rgba(95, 242, 154, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(95, 242, 154, 0.025) 1px, transparent 1px);
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
   background-size: 32px 32px;
   background-position: center;
 }

@@ -27,6 +27,7 @@ import {
   type RecordingSummary,
 } from "@/lib/sidecarApi";
 import { useReplayGaze } from "@/lib/useReplayGaze";
+import { useTheme } from "@/lib/useTheme";
 import type { SceneViewerHandle } from "@/components/SceneViewer";
 
 const STATUS_COLOR: Record<string, string> = {
@@ -35,6 +36,35 @@ const STATUS_COLOR: Record<string, string> = {
   error: "bg-alert",
   disconnected: "bg-muted",
 };
+
+/** Header pill that toggles between dark and light palette. Renders a sun
+ * glyph when we're in dark mode (showing what you'd switch to) and a moon
+ * when we're in light. Persists across reloads via localStorage. */
+function ThemeToggle() {
+  const { theme, toggle } = useTheme();
+  const next = theme === "dark" ? "light" : "dark";
+  return (
+    <button
+      onClick={toggle}
+      aria-label={`switch to ${next} mode`}
+      title={`switch to ${next} mode`}
+      className="flex h-6 w-6 items-center justify-center rounded border border-line text-muted transition hover:border-signal hover:text-signal"
+    >
+      {theme === "dark" ? (
+        // Sun
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5">
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M5 19l1.5-1.5M17.5 6.5L19 5" strokeLinecap="round" />
+        </svg>
+      ) : (
+        // Moon
+        <svg viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5">
+          <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" />
+        </svg>
+      )}
+    </button>
+  );
+}
 
 export default function Page() {
   const [scene, setScene] = useState<MediaStream | null>(null);
@@ -327,7 +357,8 @@ export default function Page() {
             Tobii Pro Glasses 3 · optokinetic nystagmus
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          <ThemeToggle />
           <span
             className={`h-2 w-2 rounded-full ${STATUS_COLOR[state] ?? "bg-muted"}`}
           />
@@ -362,11 +393,14 @@ export default function Page() {
             stream={inReplay ? null : scene}
             replaySrc={replaySceneSrc}
           />
+          {/* PupilTrend sits directly above EyeCameraGrid so a screen
+              recording cropped to the main column captures both pupil
+              metrics and the eye-camera angles in one shot. */}
+          <PupilTrend />
           <EyeCameraGrid
             stream={inReplay ? null : eye}
             replaySrc={replayEyeSrc}
           />
-          <PupilTrend />
           <Timeline />
         </div>
 
